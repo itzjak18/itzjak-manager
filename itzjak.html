@@ -1,0 +1,3676 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Itzjak — Sistema de Gestión</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --azul: #3a4a8a;
+  --azul-claro: #4a5cb0;
+  --azul-oscuro: #2d3a6e;
+  --azul-bg: #eef0fa;
+  --amarillo: #f5b800;
+  --amarillo-claro: #fdf3d0;
+
+  --gris-50: #f9f9fb;
+  --gris-100: #f4f4f6;
+  --gris-200: #e5e5ea;
+  --gris-300: #d1d5db;
+  --gris-400: #9ca3af;
+  --gris-500: #6b7280;
+  --gris-600: #4b5563;
+  --gris-700: #374151;
+  --gris-900: #111827;
+
+  --verde: #10b981;
+  --verde-bg: #d1fae5;
+  --rojo: #ef4444;
+  --rojo-bg: #fee2e2;
+  --naranja: #f59e0b;
+  --naranja-bg: #fef3c7;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 25px rgba(0,0,0,0.08), 0 4px 10px rgba(0,0,0,0.04);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: var(--gris-900);
+  background: var(--gris-50);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* === LOGIN === */
+#loginScreen {
+  position: fixed; inset: 0;
+  background: linear-gradient(135deg, var(--azul) 0%, var(--azul-oscuro) 100%);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.login-card {
+  background: white; border-radius: 20px; padding: 48px 40px;
+  width: 90%; max-width: 420px; box-shadow: var(--shadow-lg);
+}
+.login-logo { display: flex; justify-content: center; margin-bottom: 16px; }
+.login-card h1 { text-align: center; color: var(--azul); font-size: 26px; margin-bottom: 4px; }
+.login-card .subtitle { text-align: center; color: var(--gris-500); margin-bottom: 28px; font-style: italic; font-size: 13px; }
+.demo-banner {
+  background: var(--amarillo-claro); border-radius: 12px; padding: 14px;
+  margin-bottom: 18px; font-size: 13px; color: #92400e; text-align: center;
+  border: 1px solid #f5d57a;
+}
+
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--gris-700); }
+.form-group input, .form-group select, .form-group textarea {
+  width: 100%; padding: 11px 14px; border: 1.5px solid var(--gris-200);
+  border-radius: 10px; font-size: 14px; font-family: inherit;
+  transition: border-color 0.15s;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+  outline: none; border-color: var(--azul);
+}
+
+button { cursor: pointer; font-family: inherit; border: none; font-size: 14px; font-weight: 600; transition: all 0.15s; }
+.btn-primary {
+  background: var(--azul); color: white; padding: 12px 22px;
+  border-radius: 10px;
+}
+.btn-primary:hover { background: var(--azul-oscuro); }
+.btn-secondary {
+  background: white; color: var(--gris-700);
+  border: 1.5px solid var(--gris-200); padding: 9px 18px; border-radius: 10px;
+}
+.btn-secondary:hover { background: var(--gris-100); }
+.btn-success { background: var(--verde); color: white; padding: 9px 16px; border-radius: 10px; }
+.btn-success:hover { opacity: 0.9; }
+.btn-amarillo {
+  background: var(--amarillo); color: var(--azul);
+  padding: 12px 22px; border-radius: 10px;
+}
+.btn-amarillo:hover { background: #e0a800; }
+.btn-full { width: 100%; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+
+/* === LAYOUT === */
+.app { display: flex; min-height: 100vh; min-width: 1200px; }
+
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: white;
+  border-right: 1px solid var(--gris-200);
+  padding: 28px 16px;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.sidebar-logo {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 32px; padding: 0 8px;
+}
+.sidebar-logo svg { flex-shrink: 0; }
+.sidebar-logo .name {
+  font-size: 22px; font-weight: 700; color: var(--azul);
+  letter-spacing: -0.5px;
+}
+
+.sidebar-section {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px;
+  color: var(--gris-400); margin: 18px 12px 8px; font-weight: 700;
+}
+.sidebar-section:first-of-type { margin-top: 0; }
+
+.sidebar nav { flex: 1; overflow-y: auto; }
+
+.nav-item {
+  display: flex; align-items: center; gap: 12px; padding: 9px 12px;
+  color: var(--gris-700); text-decoration: none; border-radius: 10px;
+  font-size: 14px; cursor: pointer; margin-bottom: 2px;
+  transition: all 0.15s;
+}
+.nav-item:hover { background: var(--gris-100); }
+.nav-item.active {
+  background: var(--azul-bg); color: var(--azul); font-weight: 600;
+}
+.nav-item .code {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--gris-100); color: var(--gris-500);
+  width: 32px; height: 28px; border-radius: 6px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.nav-item.active .code { background: var(--amarillo); color: var(--azul); }
+
+.user-info {
+  border-top: 1px solid var(--gris-200);
+  padding-top: 16px; margin-top: 16px;
+  display: flex; align-items: center; gap: 10px;
+}
+.user-avatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--azul); color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px;
+}
+.user-info .name-block { flex: 1; min-width: 0; }
+.user-info .name { font-weight: 600; font-size: 13px; color: var(--gris-900); }
+.user-info .role {
+  display: inline-block; background: var(--azul); color: white;
+  padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;
+}
+#logoutBtn {
+  background: transparent; padding: 4px; color: var(--gris-400);
+  font-size: 18px; line-height: 1; cursor: pointer; border-radius: 6px;
+}
+#logoutBtn:hover { background: var(--gris-100); color: var(--gris-700); }
+
+main {
+  flex: 1; padding: 0 32px 32px; overflow-y: auto;
+}
+
+.searchbar {
+  background: white; border: 1px solid var(--gris-200);
+  border-radius: 12px; padding: 12px 18px; margin: 24px 0;
+  display: flex; align-items: center; gap: 10px;
+}
+.searchbar svg { flex-shrink: 0; opacity: 0.5; }
+.searchbar input {
+  flex: 1; border: none; outline: none; font-size: 14px;
+  background: transparent; font-family: inherit;
+}
+.searchbar input::placeholder { color: var(--gris-400); }
+
+.view { display: none; }
+.view.active { display: block; }
+
+h1 { font-size: 28px; font-weight: 700; color: var(--gris-900); }
+h2 { font-size: 18px; margin-bottom: 14px; color: var(--gris-900); font-weight: 700; }
+h3 { font-size: 16px; margin-bottom: 10px; font-weight: 700; }
+
+.muted { color: var(--gris-500); font-size: 14px; }
+.header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 12px; flex-wrap: wrap; }
+
+/* === Hero del dashboard === */
+.dashboard-hero {
+  background: linear-gradient(135deg, var(--azul) 0%, var(--azul-claro) 100%);
+  color: white; border-radius: 16px; padding: 28px 32px;
+  margin-bottom: 24px;
+  display: flex; justify-content: space-between; align-items: center; gap: 24px;
+  flex-wrap: wrap;
+}
+.dashboard-hero .label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 2px;
+  opacity: 0.8; font-weight: 700;
+}
+.dashboard-hero h1 { color: white; font-size: 32px; margin: 6px 0 4px; }
+.dashboard-hero .subtitle { opacity: 0.85; font-size: 14px; }
+.dashboard-hero .actions { display: flex; gap: 10px; }
+.btn-hero-secondary {
+  background: rgba(255,255,255,0.2); color: white;
+  padding: 11px 20px; border-radius: 10px; backdrop-filter: blur(6px);
+}
+.btn-hero-secondary:hover { background: rgba(255,255,255,0.3); }
+.btn-hero-primary {
+  background: var(--amarillo); color: var(--azul);
+  padding: 11px 20px; border-radius: 10px; font-weight: 700;
+}
+.btn-hero-primary:hover { background: #e0a800; }
+
+/* === KPIs estilo Pagasi === */
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.kpi-card {
+  background: white; padding: 22px 24px; border-radius: 14px;
+  border: 1px solid var(--gris-200); border-left: 4px solid var(--azul);
+  position: relative;
+}
+.kpi-card.green { border-left-color: var(--verde); }
+.kpi-card.red { border-left-color: var(--rojo); }
+.kpi-card.orange { border-left-color: var(--naranja); }
+.kpi-card.amarillo { border-left-color: var(--amarillo); }
+.kpi-card.full-width { grid-column: 1 / -1; }
+.kpi-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px;
+}
+.kpi-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+  font-weight: 700; color: var(--gris-700);
+}
+.kpi-pill {
+  background: var(--verde-bg); color: #065f46;
+  padding: 3px 10px; border-radius: 100px; font-size: 11px; font-weight: 600;
+}
+.kpi-pill.red { background: var(--rojo-bg); color: #991b1b; }
+.kpi-pill.orange { background: var(--naranja-bg); color: #92400e; }
+.kpi-pill.gray { background: var(--gris-100); color: var(--gris-600); }
+.kpi-value { font-size: 32px; font-weight: 700; color: var(--azul); line-height: 1.1; }
+.kpi-value.green { color: var(--verde); }
+.kpi-value.red { color: var(--rojo); }
+.kpi-value.orange { color: var(--naranja); }
+.kpi-foot { font-size: 13px; color: var(--gris-500); margin-top: 6px; }
+.kpi-foot strong { color: var(--gris-700); }
+.kpi-foot.with-arrow { display: flex; justify-content: space-between; }
+
+/* === Layout dashboard de 2 columnas === */
+.dashboard-grid {
+  display: grid; grid-template-columns: 1fr 320px; gap: 20px; margin-top: 20px;
+}
+.dashboard-grid > div {
+  background: white; border: 1px solid var(--gris-200);
+  border-radius: 14px; padding: 24px;
+}
+.section-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px;
+}
+.section-header h2 { margin-bottom: 0; }
+.section-subtitle { font-size: 12px; color: var(--gris-400); margin-top: 2px; }
+
+/* === Chart === */
+.chart {
+  display: flex; align-items: flex-end; gap: 12px;
+  height: 180px; padding: 20px 0;
+  border-bottom: 1px solid var(--gris-200);
+}
+.chart-bar { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.chart-bar .bar {
+  width: 100%; max-width: 36px; background: var(--azul-bg);
+  border-radius: 6px 6px 0 0; transition: all 0.3s;
+}
+.chart-bar.active .bar { background: var(--azul); }
+.chart-bar .label { font-size: 11px; color: var(--gris-500); }
+
+/* === Lista de próximos pagos === */
+.upcoming-item {
+  padding: 12px 0; border-bottom: 1px solid var(--gris-100);
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+}
+.upcoming-item:last-child { border-bottom: none; }
+.upcoming-item .info { flex: 1; min-width: 0; }
+.upcoming-item .name { font-weight: 600; font-size: 13px; }
+.upcoming-item .when { font-size: 11px; color: var(--gris-500); margin-top: 2px; }
+.upcoming-item .amount {
+  text-align: right;
+}
+.upcoming-item .amount .num { font-weight: 700; color: var(--azul); font-size: 14px; }
+.upcoming-item .amount .link {
+  font-size: 11px; color: var(--rojo); cursor: pointer;
+}
+.upcoming-item .amount .link:hover { text-decoration: underline; }
+
+/* === Filtros y tablas === */
+.filters {
+  display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;
+}
+.filters input, .filters select {
+  padding: 9px 14px; border: 1.5px solid var(--gris-200); border-radius: 10px;
+  font-size: 13px; background: white; font-family: inherit;
+}
+.filters input[type="search"] { min-width: 260px; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+.checkbox-label input[type="checkbox"] { margin: 0; flex-shrink: 0; width: 16px; height: 16px; cursor: pointer; }
+.form-group label.checkbox-label { margin-bottom: 0; font-weight: 600; color: var(--gris-700); }
+
+.card {
+  background: white; border-radius: 14px; border: 1px solid var(--gris-200);
+  overflow: hidden;
+}
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 13px 18px; text-align: left; font-size: 13px; }
+th {
+  background: var(--gris-50); font-weight: 700; color: var(--gris-600);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  border-bottom: 1px solid var(--gris-200);
+}
+td { border-top: 1px solid var(--gris-100); }
+td.right { text-align: right; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: var(--gris-50); }
+
+.id-cell {
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.code-tag {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--azul-bg); color: var(--azul);
+  padding: 4px 8px; border-radius: 6px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+}
+
+.badge {
+  display: inline-block; padding: 3px 10px; border-radius: 100px;
+  font-size: 11px; font-weight: 600;
+}
+.badge-active { background: var(--verde-bg); color: #065f46; }
+.badge-inactive { background: var(--gris-100); color: var(--gris-600); }
+.badge-nna { background: #dbeafe; color: #1e40af; }
+.badge-adulto { background: #ede9fe; color: #5b21b6; }
+.badge-si { background: var(--amarillo); color: var(--azul); }
+.badge-pending { background: var(--rojo-bg); color: #991b1b; }
+.badge-paid { background: var(--verde-bg); color: #065f46; }
+.badge-zelle { background: #dbeafe; color: #1e40af; }
+.badge-venmo { background: #cffafe; color: #155e75; }
+.badge-bs { background: var(--amarillo-claro); color: #92400e; }
+.badge-efectivo { background: #f3e8ff; color: #6b21a8; }
+
+.empty-state {
+  text-align: center; padding: 60px 20px; color: var(--gris-400);
+}
+
+/* === Modal estilo Pagasi === */
+.modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100; padding: 20px;
+  backdrop-filter: blur(4px);
+}
+.modal.hidden { display: none; }
+.modal-card {
+  background: white; border-radius: 20px;
+  max-width: 720px; width: 100%; max-height: 92vh;
+  overflow-y: auto; position: relative;
+  box-shadow: var(--shadow-lg);
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 24px 28px; border-bottom: 1px solid var(--gris-100);
+}
+.modal-header .id-cell { font-size: 13px; }
+.modal-header .id-cell .name { font-weight: 700; font-size: 15px; color: var(--gris-900); }
+.modal-header .id-cell .meta { font-size: 12px; color: var(--gris-500); margin-top: 2px; }
+.modal-close {
+  background: var(--gris-100); border: none; cursor: pointer;
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; color: var(--gris-600);
+}
+.modal-close:hover { background: var(--gris-200); }
+
+/* Hero del modal de detalle */
+.detail-hero {
+  background: linear-gradient(135deg, var(--azul) 0%, var(--azul-claro) 100%);
+  color: white; padding: 28px; margin: 20px 24px; border-radius: 16px;
+  display: flex; gap: 20px; align-items: center;
+  flex-wrap: wrap;
+}
+.detail-avatar {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.4);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 700; flex-shrink: 0;
+}
+.detail-hero-main { flex: 1; min-width: 200px; }
+.detail-hero h2 { color: white; font-size: 22px; margin-bottom: 6px; }
+.detail-hero .meta { opacity: 0.85; font-size: 13px; margin-bottom: 12px; }
+.detail-hero .status-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 100px;
+  font-size: 12px; font-weight: 600;
+}
+.detail-hero .status-pill::before {
+  content: ''; width: 6px; height: 6px; background: #4ade80; border-radius: 50%;
+}
+.detail-hero .actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.detail-hero .actions button {
+  padding: 8px 16px; font-size: 12px; border-radius: 10px; font-weight: 600;
+}
+.btn-whatsapp { background: #25D366; color: white; }
+.btn-whatsapp:hover { background: #1da851; }
+.btn-action-light {
+  background: white; color: var(--azul);
+}
+.btn-action-light:hover { background: rgba(255,255,255,0.9); }
+.btn-action-amarillo { background: var(--amarillo); color: var(--azul); }
+.btn-action-amarillo:hover { background: #e0a800; }
+
+.detail-score {
+  text-align: right; flex-shrink: 0;
+}
+.detail-score .num {
+  font-size: 36px; font-weight: 700; color: #4ade80; line-height: 1;
+}
+.detail-score .max { font-size: 12px; opacity: 0.8; }
+.detail-score .label {
+  text-transform: uppercase; letter-spacing: 1.5px; font-size: 10px;
+  margin-top: 4px; opacity: 0.85; font-weight: 700;
+}
+
+/* Stats en modal */
+.detail-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  padding: 0 28px;
+}
+.detail-stat {
+  background: white; border: 1px solid var(--gris-200);
+  border-radius: 12px; padding: 16px;
+  border-left: 3px solid var(--azul);
+}
+.detail-stat.green { border-left-color: var(--verde); }
+.detail-stat.orange { border-left-color: var(--naranja); }
+.detail-stat .num { font-size: 22px; font-weight: 700; color: var(--gris-900); }
+.detail-stat .num.green { color: var(--verde); }
+.detail-stat .num.orange { color: var(--naranja); }
+.detail-stat .lbl {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  font-weight: 700; color: var(--gris-600); margin-top: 4px;
+}
+.detail-stat .sub { font-size: 11px; color: var(--gris-500); margin-top: 2px; }
+
+/* Tabs internos */
+.detail-tabs {
+  display: flex; gap: 4px; margin: 24px 28px 0;
+  border-bottom: 1px solid var(--gris-200);
+  flex-wrap: wrap;
+}
+.detail-tab {
+  padding: 10px 18px; border-radius: 10px 10px 0 0;
+  font-size: 13px; font-weight: 600; color: var(--gris-500);
+  cursor: pointer; border: none; background: transparent;
+  border-bottom: 2px solid transparent;
+}
+.detail-tab.active {
+  color: var(--azul); background: white; border-bottom-color: var(--azul);
+  font-weight: 700;
+}
+.detail-tab:hover:not(.active) { background: var(--gris-50); }
+.detail-tab .badge-num {
+  display: inline-block; background: var(--gris-700); color: white;
+  border-radius: 100px; padding: 1px 7px; font-size: 10px; margin-left: 4px;
+}
+.detail-tab.active .badge-num { background: var(--azul); }
+
+.detail-tab-content { padding: 20px 28px 28px; min-height: 200px; }
+
+.detail-modal-foot {
+  border-top: 1px solid var(--gris-100); padding: 16px 28px;
+  display: flex; justify-content: flex-end; gap: 10px;
+  background: var(--gris-50); border-radius: 0 0 20px 20px;
+}
+
+.tarif-card {
+  background: var(--gris-50); border: 1px solid var(--gris-200);
+  border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+}
+.tarif-card-head { display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px; }
+.tarif-card-name { font-weight: 700; font-size: 14px; }
+.tarif-card-prof { font-size: 12px; color: var(--gris-500); margin-top: 2px; }
+.tarif-card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.tarif-cell { text-align: center; padding: 8px; background: white; border-radius: 8px; }
+.tarif-cell .lbl { font-size: 10px; color: var(--gris-500); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+.tarif-cell .num { font-size: 16px; font-weight: 700; color: var(--azul); margin-top: 2px; }
+.tarif-cell.green .num { color: var(--verde); }
+.tarif-cell.red .num { color: var(--rojo); }
+
+/* Honorarios cards */
+.honorario-row {
+  background: white; border: 1px solid var(--gris-200);
+  border-radius: 14px; padding: 18px 22px; margin-bottom: 12px;
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  flex-wrap: wrap;
+}
+.honorario-row .info { flex: 1; min-width: 220px; display: flex; gap: 14px; align-items: center; }
+.honorario-row .avatar {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--azul-bg); color: var(--azul);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 14px; flex-shrink: 0;
+}
+.honorario-row .name-block .name { font-weight: 700; font-size: 15px; }
+.honorario-row .name-block .esp { font-size: 12px; color: var(--gris-500); }
+.honorario-row .name-block .meta { font-size: 12px; color: var(--gris-500); margin-top: 4px; }
+.honorario-row .amount { text-align: right; }
+.honorario-row .amount .num { font-size: 22px; font-weight: 700; color: var(--rojo); }
+.honorario-row .amount .lbl { font-size: 11px; color: var(--gris-500); }
+.honorario-row .actions { display: flex; gap: 8px; }
+
+/* Sesion detail rows */
+.session-row {
+  background: var(--gris-50); border-radius: 10px; padding: 12px 14px;
+  margin-bottom: 8px; display: flex; justify-content: space-between;
+  align-items: center; font-size: 13px; gap: 10px;
+}
+.session-row label { display: flex; align-items: center; gap: 8px; flex: 1; cursor: pointer; }
+
+.alert-card {
+  border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;
+  border-left: 4px solid var(--rojo); background: var(--rojo-bg); color: #991b1b;
+  font-weight: 500;
+}
+.alert-card.warn { border-left-color: var(--naranja); background: var(--naranja-bg); color: #92400e; }
+.alert-card.info { border-left-color: var(--azul); background: var(--azul-bg); color: var(--azul); }
+
+.form-card-pro {
+  background: white; padding: 28px; border-radius: 14px;
+  border: 1px solid var(--gris-200); max-width: 600px;
+}
+
+/* Reporte donante */
+.reporte {
+  background: linear-gradient(135deg, var(--azul) 0%, var(--azul-oscuro) 100%);
+  color: white; padding: 40px; border-radius: 20px; max-width: 600px; margin: 24px 0;
+}
+.reporte h2 { color: var(--amarillo); margin-bottom: 24px; text-align: center; font-size: 22px; }
+.reporte .stat-row {
+  display: flex; align-items: center; gap: 20px; margin-bottom: 16px;
+  padding: 16px; background: rgba(255,255,255,0.08); border-radius: 14px;
+}
+.reporte .stat-num { font-size: 36px; font-weight: 700; color: var(--amarillo); min-width: 100px; text-align: center; }
+.reporte .stat-text { font-size: 14px; line-height: 1.5; }
+.reporte .lema { text-align: center; font-style: italic; margin-top: 24px; color: var(--amarillo); }
+
+@media (max-width: 1024px) {
+  .detail-stats { grid-template-columns: repeat(2, 1fr); }
+}
+@media print {
+  .sidebar, .btn-primary, .btn-secondary, .btn-success, .btn-amarillo { display: none !important; }
+  main { padding: 0; }
+}
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg width="80" height="80" viewBox="0 0 100 100">
+        <rect width="100" height="100" rx="16" fill="#3a4a8a"/>
+        <text x="50" y="58" text-anchor="middle" fill="#f5b800" font-size="22" font-weight="700" font-family="Arial">ITZJAK</text>
+        <path d="M 30 68 Q 50 80, 70 68" stroke="#f5b800" stroke-width="3" fill="none" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <h1>Itzjak</h1>
+    <p class="subtitle">"Sanando mentes, creando sonrisas"</p>
+    <button class="btn-primary btn-full" onclick="entrar()">Entrar</button>
+  </div>
+</div>
+
+<div class="app" id="appScreen" style="display:none">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg width="38" height="38" viewBox="0 0 100 100">
+        <rect width="100" height="100" rx="14" fill="#3a4a8a"/>
+        <text x="50" y="62" text-anchor="middle" fill="#f5b800" font-size="36" font-weight="700" font-family="Arial">I</text>
+        <path d="M 30 70 Q 50 82, 70 70" stroke="#f5b800" stroke-width="3" fill="none"/>
+      </svg>
+      <div class="name">Itzjak</div>
+    </div>
+
+    <nav>
+      <div class="sidebar-section">Principal</div>
+      <a class="nav-item active" data-view="dashboard">
+        <span class="code">DB</span> Dashboard
+      </a>
+
+      <div class="sidebar-section">Gestión</div>
+      <a class="nav-item" data-view="pacientes">
+        <span class="code">PA</span> Pacientes
+      </a>
+      <a class="nav-item" data-view="familias">
+        <span class="code">FA</span> Familias
+      </a>
+      <a class="nav-item" data-view="profesionales">
+        <span class="code">PR</span> Profesionales
+      </a>
+      <a class="nav-item" data-view="sesiones">
+        <span class="code">SE</span> Sesiones
+      </a>
+
+      <div class="sidebar-section">Finanzas</div>
+      <a class="nav-item" data-view="honorarios">
+        <span class="code">HN</span> Honorarios
+      </a>
+      <a class="nav-item" data-view="historial-pagos">
+        <span class="code">HP</span> Historial pagos
+      </a>
+      <a class="nav-item" data-view="cobros">
+        <span class="code">CB</span> Cobros pacientes
+      </a>
+      <a class="nav-item" data-view="donaciones">
+        <span class="code">DN</span> Donaciones
+      </a>
+      <a class="nav-item" data-view="cierre">
+        <span class="code">CM</span> Cierre de mes
+      </a>
+
+      <div class="sidebar-section">Reportes</div>
+      <a class="nav-item" data-view="reporte-donante">
+        <span class="code">RD</span> Reporte donantes
+      </a>
+    </nav>
+
+    <div class="user-info">
+      <div class="user-avatar">A</div>
+      <div class="name-block">
+        <div class="name">Admin Demo</div>
+        <span class="role">Administrador</span>
+      </div>
+      <button id="logoutBtn" onclick="resetearTodo()" title="Resetear datos">⏻</button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="searchbar">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input type="text" placeholder="Buscar pacientes, profesionales, sesiones...">
+    </div>
+
+    <div id="view-dashboard" class="view active"></div>
+    <div id="view-pacientes" class="view"></div>
+    <div id="view-familias" class="view"></div>
+    <div id="view-profesionales" class="view"></div>
+    <div id="view-sesiones" class="view"></div>
+    <div id="view-honorarios" class="view"></div>
+    <div id="view-historial-pagos" class="view"></div>
+    <div id="view-cobros" class="view"></div>
+    <div id="view-donaciones" class="view"></div>
+    <div id="view-cierre" class="view"></div>
+    <div id="view-reporte-donante" class="view"></div>
+  </main>
+</div>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-card" id="modalCard"></div>
+</div>
+
+<script>
+// ============================================================
+// PERSISTENCIA — todos los datos se guardan en el navegador
+// ============================================================
+
+const STORAGE_KEYS = {
+  profesionales: 'itzjak_profesionales',
+  pacientes: 'itzjak_pacientes',
+  sesiones: 'itzjak_sesiones',
+  donaciones: 'itzjak_donaciones',
+  familias: 'itzjak_familias',
+  inicializado: 'itzjak_inicializado',
+  version: 'itzjak_version',
+};
+
+// Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
+const VERSION_ACTUAL = "v2.0-familias";
+if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
+  Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
+  localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
+}
+
+function guardar(key, datos) {
+  localStorage.setItem(key, JSON.stringify(datos));
+}
+
+function cargar(key, defaultValue) {
+  const raw = localStorage.getItem(key);
+  if (!raw) return defaultValue;
+  try {
+    const data = JSON.parse(raw);
+    // Convertir fechas de string a Date
+    return revivirFechas(data);
+  } catch { return defaultValue; }
+}
+
+function revivirFechas(obj) {
+  if (Array.isArray(obj)) return obj.map(revivirFechas);
+  if (obj && typeof obj === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)) {
+        out[k] = new Date(v);
+      } else if (typeof v === 'object' && v !== null) {
+        out[k] = revivirFechas(v);
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  }
+  return obj;
+}
+
+// ============================================================
+// DATOS
+// ============================================================
+
+const PROFESIONALES_INICIALES = [];
+
+let PROFESIONALES = cargar(STORAGE_KEYS.profesionales, PROFESIONALES_INICIALES);
+
+// Migración: agregar honorario_sesion si falta (datos antiguos)
+PROFESIONALES.forEach(p => {
+  if (p.honorario_sesion === undefined || p.honorario_sesion === null) {
+    p.honorario_sesion = 40;
+  }
+});
+
+const NOMBRES_NNA_F = ["Sara","Rebeca","Daniela","Esther","Ariella","Maya","Tamar","Alegra","Nicole","Sofia"];
+const NOMBRES_NNA_M = ["David","Daniel","Eli","Yair","Ariel","Jaime","Moisés","Iván","Lucas","Mateo"];
+const NOMBRES_AD_F = ["Mónica","Verónica","Andrea","Patricia","Daniela","Liliana"];
+const NOMBRES_AD_M = ["Carlos","Andrés","Roberto","Miguel","Eduardo"];
+const APELLIDOS = ["Cohen","Levi","Mizrahi","Benveniste","Sasson","Salama","Ezra","Hassan","Abadi","Cabilio","Saba","Krivoy","Dabbah","Beton","Nissim","Roffe","Halaua","Chocron","Tarrab"];
+const COLEGIOS = ["Moral y Luces","Or Jabad","Sinai","Maor HaTorah"];
+const MOTIVOS = ["Ansiedad y manejo emocional","Dificultades académicas","Trastorno del aprendizaje","Problemas de conducta","Duelo familiar","Apoyo en transición escolar","Eval. neurocognitiva","Apoyo en contexto familiar","TDAH","Acompañamiento terapéutico"];
+
+function tarifaPorEsp(esp) {
+  const t = {"Psiquiatría":50,"Psicoterapia":40,"Psicología":35,"Terapia Ocupacional":35,"Psicopedagogía":35,"Terapia de Lenguaje":35,"Eval. Neuropsicológica":80};
+  return t[esp] || 40;
+}
+
+function generarPacientes() {
+  const lista = []; let id = 1;
+  for (let i = 0; i < 80; i++) {
+    const sexo = Math.random() < 0.55 ? "Femenino" : "Masculino";
+    const nombre = sexo === "Femenino" ? NOMBRES_NNA_F[Math.floor(Math.random()*NOMBRES_NNA_F.length)] : NOMBRES_NNA_M[Math.floor(Math.random()*NOMBRES_NNA_M.length)];
+    const apellido = APELLIDOS[Math.floor(Math.random()*APELLIDOS.length)];
+    const requiere_subsidio = Math.random() < 0.85;
+    const numTrats = Math.random() < 0.7 ? 1 : (Math.random() < 0.85 ? 2 : 3);
+    const usados = new Set(); const trats = [];
+    for (let j = 0; j < numTrats; j++) {
+      let prof; do { prof = PROFESIONALES[Math.floor(Math.random()*PROFESIONALES.length)]; } while (usados.has(prof.id));
+      usados.add(prof.id);
+      const tarifaTotal = tarifaPorEsp(prof.especialidad);
+      let mp; if (requiere_subsidio) { const c = 0.5 + Math.random()*0.5; mp = Math.round(tarifaTotal * (1 - c)); } else mp = tarifaTotal;
+      trats.push({
+        id: `t-${id}-${j}`,
+        profesional_id: prof.id, profesional_nombre: prof.nombre, especialidad: prof.especialidad,
+        tarifa_total: tarifaTotal, monto_paciente: mp, monto_itzjak: tarifaTotal - mp,
+        sesiones_planificadas_mes: 4,
+      });
+    }
+    lista.push({
+      id: id++, nombre_completo: `${nombre} ${apellido}`,
+      grupo_etario: "NNA", sexo, edad: 5 + Math.floor(Math.random()*13),
+      colegio: COLEGIOS[Math.floor(Math.random()*COLEGIOS.length)],
+      telefono: `0414-${Math.floor(Math.random()*900+100)}${Math.floor(Math.random()*9000+1000)}`,
+      cedula: `V-${Math.floor(Math.random()*900000+10000000)}`,
+      requiere_subsidio, ts_canalizado: Math.random() < 0.4,
+      referido_colegio: Math.random() < 0.6,
+      motivo_consulta: MOTIVOS[Math.floor(Math.random()*MOTIVOS.length)],
+      estado: "activo", tratamientos: trats,
+    });
+  }
+  for (let i = 0; i < 38; i++) {
+    const sexo = Math.random() < 0.7 ? "Femenino" : "Masculino";
+    const nombre = sexo === "Femenino" ? NOMBRES_AD_F[Math.floor(Math.random()*NOMBRES_AD_F.length)] : NOMBRES_AD_M[Math.floor(Math.random()*NOMBRES_AD_M.length)];
+    const apellido = APELLIDOS[Math.floor(Math.random()*APELLIDOS.length)];
+    const requiere_subsidio = Math.random() < 0.85;
+    const prof = PROFESIONALES[Math.floor(Math.random()*PROFESIONALES.length)];
+    const tarifaTotal = tarifaPorEsp(prof.especialidad);
+    let mp; if (requiere_subsidio) { const c = 0.5 + Math.random()*0.5; mp = Math.round(tarifaTotal * (1 - c)); } else mp = tarifaTotal;
+    lista.push({
+      id: id++, nombre_completo: `${nombre} ${apellido}`,
+      grupo_etario: "Adulto", sexo, edad: 25 + Math.floor(Math.random()*50),
+      colegio: null,
+      telefono: `0412-${Math.floor(Math.random()*900+100)}${Math.floor(Math.random()*9000+1000)}`,
+      cedula: `V-${Math.floor(Math.random()*900000+10000000)}`,
+      requiere_subsidio, ts_canalizado: Math.random() < 0.6,
+      referido_colegio: false,
+      motivo_consulta: MOTIVOS[Math.floor(Math.random()*MOTIVOS.length)],
+      estado: "activo",
+      tratamientos: [{
+        id: `t-${id}-0`, profesional_id: prof.id, profesional_nombre: prof.nombre,
+        especialidad: prof.especialidad, tarifa_total: tarifaTotal,
+        monto_paciente: mp, monto_itzjak: tarifaTotal - mp, sesiones_planificadas_mes: 4,
+      }],
+    });
+  }
+  return lista.sort((a,b) => a.nombre_completo.localeCompare(b.nombre_completo));
+}
+
+let PACIENTES = cargar(STORAGE_KEYS.pacientes, []);
+
+function generarSesiones() {
+  const ses = []; let id = 1;
+  const hoy = new Date();
+  const inicioMesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  for (const p of PACIENTES) {
+    for (const t of p.tratamientos) {
+      const numAnt = 3 + Math.floor(Math.random()*3);
+      for (let i = 0; i < numAnt; i++) {
+        const f = new Date(inicioMesAnt); f.setDate(1 + i*7 + Math.floor(Math.random()*4));
+        ses.push({
+          id: id++, fecha: f, paciente_id: p.id, paciente_nombre: p.nombre_completo,
+          tratamiento_id: t.id, profesional_id: t.profesional_id, profesional_nombre: t.profesional_nombre,
+          tarifa_total: t.tarifa_total, monto_paciente: t.monto_paciente, monto_itzjak: t.monto_itzjak,
+          asistio: true,
+          estado_pago_itzjak: i < 2 ? "pagado" : "pendiente",
+          fecha_pago: i < 2 ? new Date(inicioMesAnt.getTime() + 32*86400000) : null,
+          metodo_pago: i < 2 ? (Math.random() < 0.7 ? "Zelle" : "Efectivo") : null,
+          cobro_paciente_recibido: t.monto_paciente > 0 ? Math.random() < 0.85 : true,
+        });
+      }
+      const numEste = 1 + Math.floor(Math.random()*4);
+      for (let i = 0; i < numEste; i++) {
+        const f = new Date(hoy.getFullYear(), hoy.getMonth(), 1 + i*6);
+        if (f > hoy) continue;
+        ses.push({
+          id: id++, fecha: f, paciente_id: p.id, paciente_nombre: p.nombre_completo,
+          tratamiento_id: t.id, profesional_id: t.profesional_id, profesional_nombre: t.profesional_nombre,
+          tarifa_total: t.tarifa_total, monto_paciente: t.monto_paciente, monto_itzjak: t.monto_itzjak,
+          asistio: true, estado_pago_itzjak: "pendiente", fecha_pago: null, metodo_pago: null,
+          cobro_paciente_recibido: t.monto_paciente > 0 ? Math.random() < 0.7 : true,
+        });
+      }
+    }
+  }
+  return ses;
+}
+
+let SESIONES = cargar(STORAGE_KEYS.sesiones, []);
+
+let DONACIONES = cargar(STORAGE_KEYS.donaciones, []);
+
+let FAMILIAS = cargar(STORAGE_KEYS.familias, []);
+
+function pagosRealizados() {
+  const grupo = {};
+  for (const s of SESIONES.filter(s => s.estado_pago_itzjak === "pagado")) {
+    const key = `${s.profesional_id}_${s.fecha_pago.toISOString().slice(0,10)}_${s.metodo_pago}`;
+    if (!grupo[key]) {
+      grupo[key] = { profesional_id: s.profesional_id, profesional_nombre: s.profesional_nombre,
+        fecha_pago: s.fecha_pago, metodo: s.metodo_pago, sesiones: [], monto: 0 };
+    }
+    grupo[key].sesiones.push(s);
+    grupo[key].monto += s.monto_itzjak;
+  }
+  return Object.values(grupo).sort((a,b) => b.fecha_pago - a.fecha_pago);
+}
+
+// Funciones de guardado
+function guardarProfesionales() { guardar(STORAGE_KEYS.profesionales, PROFESIONALES); }
+function guardarPacientes() { guardar(STORAGE_KEYS.pacientes, PACIENTES); }
+function guardarSesiones() { guardar(STORAGE_KEYS.sesiones, SESIONES); }
+function guardarDonaciones() { guardar(STORAGE_KEYS.donaciones, DONACIONES); }
+function guardarFamilias() { guardar(STORAGE_KEYS.familias, FAMILIAS); }
+
+function nuevoId(coleccion) {
+  if (!coleccion.length) return 1;
+  return Math.max(...coleccion.map(x => x.id || 0)) + 1;
+}
+
+// Reset para limpiar todos los datos (botón de emergencia)
+function resetearTodo() {
+  if (!confirm("¿Estás seguro? Esto borra TODOS los datos (pacientes, profesionales, sesiones, donaciones) y vuelve a cargar los datos iniciales. Esta acción no se puede deshacer.")) return;
+  Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
+  location.reload();
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+const ui = {
+  badgeGrupo: g => g === "NNA" ? '<span class="badge badge-nna">NNA</span>' : g === "Adulto" ? '<span class="badge badge-adulto">Adulto</span>' : "—",
+  badgeMetodo: m => {
+    const cls = {Zelle:"badge-zelle", Venmo:"badge-venmo", "Bolívares":"badge-bs", Efectivo:"badge-efectivo"}[m] || "badge-efectivo";
+    return `<span class="badge ${cls}">${m}</span>`;
+  },
+  formatMoney: n => "$" + (n||0).toLocaleString("es-VE", {minimumFractionDigits:0, maximumFractionDigits:0}),
+  formatDate: d => {
+    if (!d) return "—";
+    const date = d instanceof Date ? d : new Date(d);
+    return date.toLocaleDateString("es-VE", {day:"2-digit", month:"2-digit", year:"numeric"});
+  },
+  formatMesAnio: d => {
+    const date = d instanceof Date ? d : new Date(d);
+    let s = date.toLocaleDateString("es-VE", {month:"long", year:"numeric"});
+    return s[0].toUpperCase() + s.slice(1);
+  },
+  initials: name => name.split(' ').slice(0,2).map(w => w[0]).join('').toUpperCase(),
+};
+
+function diasDesde(fecha) {
+  const d = fecha instanceof Date ? fecha : new Date(fecha);
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+// ============================================================
+// NAV
+// ============================================================
+
+function entrar() {
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("appScreen").style.display = "flex";
+  cambiarVista("dashboard");
+}
+function salir() {
+  document.getElementById("loginScreen").style.display = "flex";
+  document.getElementById("appScreen").style.display = "none";
+}
+function cambiarVista(view) {
+  document.querySelectorAll(".nav-item").forEach(i => i.classList.toggle("active", i.dataset.view === view));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + view));
+  const r = {
+    dashboard: renderDashboard, pacientes: renderPacientes,
+    familias: renderFamilias,
+    profesionales: renderProfesionales, sesiones: renderSesiones,
+    honorarios: renderHonorarios, "historial-pagos": renderHistorialPagos,
+    cobros: renderCobros, donaciones: renderDonaciones,
+    cierre: renderCierre, "reporte-donante": renderReporteDonante,
+  };
+  r[view]?.();
+}
+document.querySelectorAll(".nav-item").forEach(item => {
+  item.addEventListener("click", () => cambiarVista(item.dataset.view));
+});
+function abrirModal(html) {
+  document.getElementById("modalCard").innerHTML = html;
+  document.getElementById("modal").classList.remove("hidden");
+}
+function cerrarModal() { document.getElementById("modal").classList.add("hidden"); }
+document.getElementById("modal").addEventListener("click", (e) => {
+  if (e.target.id === "modal") cerrarModal();
+});
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+
+function renderDashboard() {
+  const usuariosActivos = PACIENTES.length;
+  const sesionesTotales = 3127;
+  const hoy = new Date();
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const sesionesMes = SESIONES.filter(s => s.fecha >= inicioMes).length;
+  const conSubsidio = PACIENTES.filter(p => p.requiere_subsidio).length;
+  const pctSubsidio = Math.round(100 * conSubsidio / usuariosActivos);
+  const referidosEsc = PACIENTES.filter(p => p.referido_colegio).length;
+  const pendientesPagar = SESIONES.filter(s => s.estado_pago_itzjak === "pendiente").reduce((sum, s) => sum + s.monto_itzjak, 0);
+  const cobrosPendientes = SESIONES.filter(s => !s.cobro_paciente_recibido && s.monto_paciente > 0).reduce((sum, s) => sum + s.monto_paciente, 0);
+  const donacionesMes = DONACIONES.filter(d => d.fecha >= inicioMes).reduce((sum, d) => sum + d.monto, 0);
+
+  // Próximos pagos pendientes (top 4)
+  const pendientesPorProf = {};
+  for (const s of SESIONES.filter(s => s.estado_pago_itzjak === "pendiente" && s.monto_itzjak > 0)) {
+    if (!pendientesPorProf[s.profesional_id]) {
+      const prof = PROFESIONALES.find(p => p.id === s.profesional_id);
+      pendientesPorProf[s.profesional_id] = { profesional: prof, sesiones: [], total: 0 };
+    }
+    pendientesPorProf[s.profesional_id].sesiones.push(s);
+    pendientesPorProf[s.profesional_id].total += s.monto_itzjak;
+  }
+  const proxPagos = Object.values(pendientesPorProf).sort((a,b) => b.total - a.total).slice(0, 4);
+
+  // Pacientes morosos
+  const morososPorPac = {};
+  for (const s of SESIONES.filter(s => !s.cobro_paciente_recibido && s.monto_paciente > 0)) {
+    if (!morososPorPac[s.paciente_id]) {
+      morososPorPac[s.paciente_id] = {
+        paciente_id: s.paciente_id,
+        paciente_nombre: s.paciente_nombre,
+        sesiones: [],
+        total: 0,
+        fechaMasAntigua: s.fecha,
+      };
+    }
+    morososPorPac[s.paciente_id].sesiones.push(s);
+    morososPorPac[s.paciente_id].total += s.monto_paciente;
+    if (s.fecha < morososPorPac[s.paciente_id].fechaMasAntigua) {
+      morososPorPac[s.paciente_id].fechaMasAntigua = s.fecha;
+    }
+  }
+  const morosos = Object.values(morososPorPac)
+    .map(m => ({ ...m, diasMora: diasDesde(m.fechaMasAntigua) }))
+    .sort((a,b) => b.total - a.total);
+
+  // Gráfico ingresos últimos 7 meses (donaciones)
+  const meses = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const lbl = d.toLocaleDateString("es-VE", {month:"short"}).replace(".","");
+    let total = i === 0 ? donacionesMes : (Math.random() < 0.5 ? 0 : Math.floor(Math.random() * 3000));
+    meses.push({ label: lbl, total, current: i === 0 });
+  }
+  const max = Math.max(...meses.map(m => m.total), 1000);
+
+  document.getElementById("view-dashboard").innerHTML = `
+    <div class="dashboard-hero">
+      <div>
+        <div class="label">Panel principal · ${hoy.toLocaleDateString("es-VE", {weekday:"long", day:"numeric", month:"long", year:"numeric"})}</div>
+        <h1>Hola, Admin</h1>
+        <div class="subtitle">Resumen general · pacientes, sesiones y finanzas</div>
+      </div>
+      <div class="actions">
+        <button class="btn-hero-secondary" onclick="cambiarVista('reporte-donante')">Reportes</button>
+        <button class="btn-hero-primary" onclick="cambiarVista('sesiones')">+ Nueva sesión</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <div class="kpi-label">Pacientes activos</div>
+          <span class="kpi-pill gray">${usuariosActivos} totales</span>
+        </div>
+        <div class="kpi-value">+${usuariosActivos}</div>
+        <div class="kpi-foot">en atención</div>
+      </div>
+
+      <div class="kpi-card amarillo">
+        <div class="kpi-header">
+          <div class="kpi-label">Sesiones (Mes)</div>
+          <span class="kpi-pill">Al día</span>
+        </div>
+        <div class="kpi-value">${sesionesMes}</div>
+        <div class="kpi-foot">${sesionesTotales.toLocaleString()} totales</div>
+      </div>
+
+      <div class="kpi-card red">
+        <div class="kpi-header">
+          <div class="kpi-label">Pendiente pagar</div>
+          <span class="kpi-pill red">A profesionales</span>
+        </div>
+        <div class="kpi-value red">${ui.formatMoney(pendientesPagar)}</div>
+        <div class="kpi-foot">click "Honorarios"</div>
+      </div>
+
+      <div class="kpi-card green">
+        <div class="kpi-header">
+          <div class="kpi-label">Donaciones (Mes)</div>
+          <span class="kpi-pill">${DONACIONES.filter(d => d.fecha >= inicioMes).length} donantes</span>
+        </div>
+        <div class="kpi-value green">${ui.formatMoney(donacionesMes)}</div>
+        <div class="kpi-foot with-arrow">
+          <span>Ingresos</span>
+          <strong>${pctSubsidio}% subsidio</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div>
+        <div class="section-header">
+          <div>
+            <h2>Ingresos mensuales</h2>
+            <div class="section-subtitle">Donaciones — últimos 7 meses</div>
+          </div>
+          <button class="btn-secondary btn-sm" onclick="cambiarVista('donaciones')">Ver detalle</button>
+        </div>
+        <div class="chart">
+          ${meses.map(m => `
+            <div class="chart-bar ${m.current ? 'active' : ''}">
+              <div class="bar" style="height: ${(m.total / max) * 140}px"></div>
+              <div class="label">${m.label}</div>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+
+      <div>
+        <div class="section-header">
+          <div>
+            <h2>Pagos próximos</h2>
+            <div class="section-subtitle">A profesionales</div>
+          </div>
+          <span class="kpi-pill red">${proxPagos.length}</span>
+        </div>
+        ${proxPagos.map(p => `
+          <div class="upcoming-item">
+            <div class="info">
+              <div class="name">${p.profesional.nombre}</div>
+              <div class="when">hace ${diasDesde(p.profesional.ultimo_pago)}d · ${p.sesiones.length} sesiones</div>
+            </div>
+            <div class="amount">
+              <div class="num">${ui.formatMoney(p.total)}</div>
+              <div class="link" onclick="cambiarVista('honorarios')">Liquidar →</div>
+            </div>
+          </div>
+        `).join("")}
+        <div style="margin-top: 12px; text-align: center;">
+          <a onclick="cambiarVista('honorarios')" style="color: var(--azul); font-size: 12px; cursor: pointer; font-weight: 600;">Ver todos los pagos →</a>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:white;border:1px solid var(--gris-200);border-radius:14px;padding:24px;margin-top:20px">
+      <div class="section-header">
+        <div>
+          <h2 style="display:flex;align-items:center;gap:10px">Pacientes morosos
+            ${morosos.length > 0 ? `<span class="kpi-pill red">${morosos.length}</span>` : ''}
+          </h2>
+          <div class="section-subtitle">Pacientes que no han pagado su parte al profesional</div>
+        </div>
+        <button class="btn-secondary btn-sm" onclick="cambiarVista('cobros')">Ver todos →</button>
+      </div>
+      ${morosos.length > 0 ? `
+        <div class="card" style="border:none;box-shadow:none">
+          <table>
+            <thead><tr><th>Paciente</th><th>Sesiones sin pagar</th><th>Días en mora</th><th>Monto</th><th></th></tr></thead>
+            <tbody>
+              ${morosos.slice(0, 5).map(m => `
+                <tr class="clickable" onclick="verPaciente(${m.paciente_id})">
+                  <td>
+                    <div class="id-cell">
+                      <span class="code-tag">PA</span>
+                      <strong>${m.paciente_nombre}</strong>
+                    </div>
+                  </td>
+                  <td>${m.sesiones.length}</td>
+                  <td>${m.diasMora}d</td>
+                  <td class="right" style="font-weight:700;color:var(--rojo)">${ui.formatMoney(m.total)}</td>
+                  <td><button class="btn-secondary btn-sm" onclick="event.stopPropagation();registrarCobroPaciente(${m.paciente_id})">Registrar pago</button></td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : '<div style="text-align:center;padding:30px;color:var(--gris-400)">Todos los pacientes están al día</div>'}
+    </div>
+  `;
+}
+
+// ============================================================
+// PACIENTES
+// ============================================================
+
+function renderPacientes() {
+  document.getElementById("view-pacientes").innerHTML = `
+    <div class="header-row">
+      <h1>Pacientes</h1>
+      <button class="btn-primary" onclick="modalNuevoPaciente()">+ Nuevo paciente</button>
+    </div>
+    <div class="filters">
+      <input type="search" id="filtroBusqueda" placeholder="Buscar por nombre...">
+      <select id="filtroGrupo">
+        <option value="">Todos los grupos</option>
+        <option value="NNA">NNA</option>
+        <option value="Adulto">Adultos</option>
+      </select>
+      <label class="checkbox-label"><input type="checkbox" id="filtroSubsidio"> Solo con subsidio</label>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th>Paciente</th><th>Familia</th><th>Grupo</th><th>Edad</th><th>Colegio</th><th>Subsidio</th><th></th></tr>
+        </thead>
+        <tbody id="tablaPacientesBody"></tbody>
+      </table>
+    </div>
+  `;
+
+  function actualizar() {
+    const busqueda = document.getElementById("filtroBusqueda").value.toLowerCase();
+    const grupo = document.getElementById("filtroGrupo").value;
+    const subsidio = document.getElementById("filtroSubsidio").checked;
+    const filt = PACIENTES.filter(p => {
+      if (busqueda && !p.nombre_completo.toLowerCase().includes(busqueda)) return false;
+      if (grupo && p.grupo_etario !== grupo) return false;
+      if (subsidio && !p.requiere_subsidio) return false;
+      return true;
+    });
+    document.getElementById("tablaPacientesBody").innerHTML = filt.length ? filt.map(p => {
+      const familia = p.familia_id ? FAMILIAS.find(f => f.id === p.familia_id) : null;
+      return `
+        <tr class="clickable" onclick="verPaciente(${p.id})">
+          <td>
+            <div class="id-cell">
+              <span class="code-tag">PA</span>
+              <div>
+                <div style="font-weight:600">${p.nombre_completo}</div>
+                <div style="font-size:11px;color:var(--gris-500)">${p.cedula} · ${p.telefono || 'sin tel.'}</div>
+              </div>
+            </div>
+          </td>
+          <td>${familia ? `<span class="badge" style="background:var(--azul-bg);color:var(--azul)">${familia.apellido}</span>` : '<span style="color:var(--gris-400);font-size:12px">—</span>'}</td>
+          <td>${ui.badgeGrupo(p.grupo_etario)}</td>
+          <td>${p.edad || '—'}</td>
+          <td>${p.colegio || '—'}</td>
+          <td>${p.requiere_subsidio ? '<span class="badge badge-si">SI</span>' : '—'}</td>
+          <td style="color:var(--gris-400);font-size:18px">›</td>
+        </tr>
+      `;
+    }).join("") : '<tr><td colspan="7" class="empty-state">Sin resultados</td></tr>';
+  }
+  ["filtroBusqueda","filtroGrupo","filtroSubsidio"].forEach(id => {
+    document.getElementById(id).addEventListener("input", actualizar);
+  });
+  actualizar();
+}
+
+let detalleTabActivo = "resumen";
+
+function verPaciente(id) {
+  const p = PACIENTES.find(x => x.id === id);
+  if (!p) return;
+  detalleTabActivo = "resumen";
+
+  const sesionesPac = SESIONES.filter(s => s.paciente_id === id);
+  const totalPagado = sesionesPac.filter(s => s.cobro_paciente_recibido).reduce((sum,s) => sum + s.monto_paciente, 0);
+  const saldoPendiente = sesionesPac.filter(s => !s.cobro_paciente_recibido).reduce((sum,s) => sum + s.monto_paciente, 0);
+  const enMora = saldoPendiente > 0;
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">PA</span>
+        <div>
+          <div class="name">${p.nombre_completo}</div>
+          <div class="meta">${p.cedula} · ${p.colegio || 'Adulto'}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+
+    ${enMora ? `
+      <div style="background:var(--rojo-bg);color:#991b1b;padding:14px 28px;margin:16px 24px 0;border-radius:12px;border-left:4px solid var(--rojo);font-weight:600">
+        Este paciente debe ${ui.formatMoney(saldoPendiente)} (${sesionesPac.filter(s=>!s.cobro_paciente_recibido).length} sesiones sin pagar)
+      </div>
+    ` : ''}
+
+    <div class="detail-hero">
+      <div class="detail-avatar">${ui.initials(p.nombre_completo)}</div>
+      <div class="detail-hero-main">
+        <h2>${p.nombre_completo}</h2>
+        <div class="meta">${p.cedula} · ${p.colegio || 'Adulto'} · ${p.telefono || 'Sin teléfono'}</div>
+        <div class="status-pill">${enMora ? 'EN MORA' : 'AL DÍA'}</div>
+        <div class="actions">
+          ${p.telefono ? `<button class="btn-whatsapp" onclick="window.open('https://wa.me/' + '${p.telefono}'.replace(/[^0-9]/g, ''))">WhatsApp</button>` : ''}
+          ${p.telefono ? `<button class="btn-action-light" onclick="window.location.href='tel:${p.telefono}'">Llamar</button>` : ''}
+          ${enMora ? `<button class="btn-action-amarillo" onclick="cerrarModal();setTimeout(() => registrarCobroPaciente(${id}), 100)">Registrar pago</button>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-stats">
+      <div class="detail-stat">
+        <div class="num">${p.tratamientos.length}</div>
+        <div class="lbl">Tratamientos</div>
+        <div class="sub">${p.tratamientos.length} activos</div>
+      </div>
+      <div class="detail-stat green">
+        <div class="num green">${ui.formatMoney(totalPagado)}</div>
+        <div class="lbl">Total pagado</div>
+        <div class="sub">${sesionesPac.filter(s=>s.cobro_paciente_recibido).length} sesiones</div>
+      </div>
+      <div class="detail-stat orange">
+        <div class="num orange">${ui.formatMoney(saldoPendiente)}</div>
+        <div class="lbl">Saldo pendiente</div>
+        <div class="sub">${sesionesPac.filter(s=>!s.cobro_paciente_recibido).length} de ${sesionesPac.length} sesiones</div>
+      </div>
+      <div class="detail-stat ${enMora ? '' : 'green'}">
+        <div class="num ${enMora ? 'orange' : 'green'}">${enMora ? "Si" : "No"}</div>
+        <div class="lbl">Historial mora</div>
+        <div class="sub">${enMora ? "Tiene saldo" : "Buen comportamiento"}</div>
+      </div>
+    </div>
+
+    <div class="detail-tabs">
+      <button class="detail-tab active" onclick="cambiarTabDetalle(${id}, 'resumen')">Resumen</button>
+      <button class="detail-tab" onclick="cambiarTabDetalle(${id}, 'tratamientos')">Tratamientos <span class="badge-num">${p.tratamientos.length}</span></button>
+      <button class="detail-tab" onclick="cambiarTabDetalle(${id}, 'sesiones')">Sesiones <span class="badge-num">${sesionesPac.length}</span></button>
+      <button class="detail-tab" onclick="cambiarTabDetalle(${id}, 'personal')">Personal</button>
+    </div>
+
+    <div class="detail-tab-content" id="detalleTabContent">${contenidoTabDetalle(p, "resumen")}</div>
+
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+      <button class="btn-primary" onclick="alert('Abre formulario de edición')">Editar</button>
+    </div>
+  `);
+}
+
+function cambiarTabDetalle(id, tab) {
+  detalleTabActivo = tab;
+  const p = PACIENTES.find(x => x.id === id);
+  document.querySelectorAll(".detail-tab").forEach(t => t.classList.toggle("active", t.textContent.toLowerCase().includes(tab)));
+  document.getElementById("detalleTabContent").innerHTML = contenidoTabDetalle(p, tab);
+}
+
+function contenidoTabDetalle(p, tab) {
+  const sesPac = SESIONES.filter(s => s.paciente_id === p.id).sort((a,b) => b.fecha - a.fecha);
+
+  if (tab === "resumen") {
+    return `
+      <h3>Motivo de consulta</h3>
+      <p style="margin-bottom:18px;color:var(--gris-700)">${p.motivo_consulta}</p>
+      <h3>Datos clave</h3>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:8px">
+        <div style="background:var(--gris-50);padding:12px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Grupo</div>
+          <div style="margin-top:4px">${ui.badgeGrupo(p.grupo_etario)} · ${p.edad} años</div>
+        </div>
+        <div style="background:var(--gris-50);padding:12px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Sexo</div>
+          <div style="margin-top:4px">${p.sexo}</div>
+        </div>
+        <div style="background:var(--gris-50);padding:12px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Subsidio</div>
+          <div style="margin-top:4px">${p.requiere_subsidio ? '<span class="badge badge-si">SI</span>' : 'No'}</div>
+        </div>
+        <div style="background:var(--gris-50);padding:12px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">TS canalizado</div>
+          <div style="margin-top:4px">${p.ts_canalizado ? "Si" : "No"}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (tab === "tratamientos") {
+    return p.tratamientos.map(t => `
+      <div class="tarif-card">
+        <div class="tarif-card-head">
+          <div>
+            <div class="tarif-card-name">${t.especialidad}</div>
+            <div class="tarif-card-prof">con ${t.profesional_nombre}</div>
+          </div>
+          <span class="badge badge-active">activo</span>
+        </div>
+        <div class="tarif-card-grid">
+          <div class="tarif-cell">
+            <div class="lbl">Tarifa total</div>
+            <div class="num">${ui.formatMoney(t.tarifa_total)}</div>
+          </div>
+          <div class="tarif-cell green">
+            <div class="lbl">Paga paciente</div>
+            <div class="num">${ui.formatMoney(t.monto_paciente)}</div>
+          </div>
+          <div class="tarif-cell red">
+            <div class="lbl">Cubre Itzjak</div>
+            <div class="num">${ui.formatMoney(t.monto_itzjak)}</div>
+          </div>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  if (tab === "sesiones") {
+    return `
+      <div class="card">
+        <table>
+          <thead>
+            <tr><th>Fecha</th><th>Profesional</th><th>Paciente pagó</th><th>Itzjak pagó prof.</th></tr>
+          </thead>
+          <tbody>
+            ${sesPac.slice(0, 20).map(s => `
+              <tr>
+                <td>${ui.formatDate(s.fecha)}</td>
+                <td>${s.profesional_nombre}</td>
+                <td>${s.cobro_paciente_recibido ? '<span class="badge badge-paid">Sí</span>' : '<span class="badge badge-pending">No</span>'}</td>
+                <td>${s.estado_pago_itzjak === "pagado" ? '<span class="badge badge-paid">Pagado</span>' : '<span class="badge badge-pending">Pendiente</span>'}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (tab === "personal") {
+    const familia = p.familia_id ? FAMILIAS.find(f => f.id === p.familia_id) : null;
+    return `
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+        <div style="background:var(--gris-50);padding:14px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Nombre completo</div>
+          <div style="margin-top:4px;font-weight:600">${p.nombre_completo}</div>
+        </div>
+        <div style="background:var(--gris-50);padding:14px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Cédula</div>
+          <div style="margin-top:4px;font-weight:600">${p.cedula}</div>
+        </div>
+        <div style="background:var(--gris-50);padding:14px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Teléfono</div>
+          <div style="margin-top:4px;font-weight:600">${p.telefono || '—'}</div>
+        </div>
+        <div style="background:var(--gris-50);padding:14px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Colegio</div>
+          <div style="margin-top:4px;font-weight:600">${p.colegio || '—'}</div>
+        </div>
+        <div style="background:var(--azul-bg);padding:14px;border-radius:10px;grid-column:1/-1;border-left:4px solid var(--azul)">
+          <div style="font-size:11px;color:var(--azul);text-transform:uppercase;letter-spacing:1px;font-weight:700">Familia</div>
+          <div style="margin-top:6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            ${familia ? `
+              <div>
+                <strong style="font-size:14px">Familia ${familia.apellido}</strong>
+                ${familia.responsable_nombre ? `<br><small style="color:var(--gris-700)">Responsable: ${familia.responsable_nombre}</small>` : ''}
+              </div>
+              <div style="display:flex;gap:6px">
+                <button class="btn-secondary btn-sm" onclick="cerrarModal();setTimeout(() => verFamilia(${familia.id}), 100)">Ver familia</button>
+                <button class="btn-secondary btn-sm" onclick="cambiarFamiliaPaciente(${p.id})">Cambiar</button>
+              </div>
+            ` : `
+              <span style="color:var(--gris-700)">Sin familia asignada</span>
+              <button class="btn-amarillo btn-sm" onclick="cambiarFamiliaPaciente(${p.id})">Asignar familia</button>
+            `}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  return "";
+}
+
+function cambiarFamiliaPaciente(pacId) {
+  const p = PACIENTES.find(x => x.id === pacId);
+  if (!p) return;
+
+  if (FAMILIAS.length === 0) {
+    if (confirm("No hay familias creadas todavía. ¿Quieres ir a crear una nueva familia ahora?")) {
+      cerrarModal();
+      cambiarVista("familias");
+      setTimeout(() => modalNuevaFamilia(), 300);
+    }
+    return;
+  }
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">FA</span>
+        <div>
+          <div class="name">Asignar familia a ${p.nombre_completo}</div>
+          <div class="meta">${p.familia_id ? 'Cambiar de familia' : 'Asignar a una familia'}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div class="form-group">
+        <label>Familia</label>
+        <select id="cf_familia">
+          <option value="">— Sin familia (independiente) —</option>
+          ${FAMILIAS.map(f => `<option value="${f.id}" ${p.familia_id === f.id ? 'selected' : ''}>Familia ${f.apellido}${f.telefono ? ' · ' + f.telefono : ''}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="confirmarCambioFamilia(${pacId})">Guardar</button>
+    </div>
+  `);
+}
+
+function confirmarCambioFamilia(pacId) {
+  const p = PACIENTES.find(x => x.id === pacId);
+  if (!p) return;
+  const nuevaFamId = parseInt(document.getElementById("cf_familia").value) || null;
+
+  // Si era responsable de su familia anterior, quitarlo
+  if (p.familia_id) {
+    const famAnterior = FAMILIAS.find(f => f.id === p.familia_id);
+    if (famAnterior && famAnterior.responsable_id === pacId) {
+      famAnterior.responsable_id = null;
+      famAnterior.responsable_nombre = '';
+      guardarFamilias();
+    }
+  }
+
+  p.familia_id = nuevaFamId;
+
+  // Heredar teléfono familiar si no tiene
+  if (nuevaFamId && !p.telefono) {
+    const f = FAMILIAS.find(x => x.id === nuevaFamId);
+    if (f && f.telefono) p.telefono = f.telefono;
+  }
+
+  guardarPacientes();
+  cerrarModal();
+  setTimeout(() => verPaciente(pacId), 50);
+}
+
+// ============================================================
+// FAMILIAS — CRUD COMPLETO
+// ============================================================
+
+function renderFamilias() {
+  document.getElementById("view-familias").innerHTML = `
+    <div class="header-row">
+      <h1>Familias</h1>
+      <button class="btn-primary" onclick="modalNuevaFamilia()">+ Nueva familia</button>
+    </div>
+    <p class="muted" style="margin-bottom:20px">Agrupa pacientes por familia. Útil para cobros, contacto y seguimiento conjunto.</p>
+    <div class="filters">
+      <input type="search" id="filtroFamBusqueda" placeholder="Buscar familia o apellido...">
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Familia</th><th>Responsable</th><th>Teléfono</th><th>Miembros</th><th>Saldo pendiente</th><th></th></tr></thead>
+        <tbody id="tablaFamBody"></tbody>
+      </table>
+    </div>
+  `;
+
+  function actualizar() {
+    const busq = document.getElementById("filtroFamBusqueda").value.toLowerCase();
+    const filt = FAMILIAS.filter(f => {
+      if (!busq) return true;
+      return f.apellido.toLowerCase().includes(busq) ||
+             (f.responsable_nombre || '').toLowerCase().includes(busq);
+    });
+
+    if (!filt.length) {
+      document.getElementById("tablaFamBody").innerHTML = FAMILIAS.length === 0
+        ? '<tr><td colspan="6" class="empty-state">Aún no hay familias.<br>Click en "+ Nueva familia" para crear la primera.</td></tr>'
+        : '<tr><td colspan="6" class="empty-state">Sin resultados</td></tr>';
+      return;
+    }
+
+    document.getElementById("tablaFamBody").innerHTML = filt.map(f => {
+      const miembros = PACIENTES.filter(p => p.familia_id === f.id);
+      const sesionesFamilia = SESIONES.filter(s => miembros.some(m => m.id === s.paciente_id));
+      const saldoPendiente = sesionesFamilia.filter(s => !s.cobro_paciente_recibido).reduce((sum,s) => sum + s.monto_paciente, 0);
+      return `
+        <tr class="clickable" onclick="verFamilia(${f.id})">
+          <td>
+            <div class="id-cell">
+              <span class="code-tag">FA</span>
+              <strong>Familia ${f.apellido}</strong>
+            </div>
+          </td>
+          <td>${f.responsable_nombre || '<span style="color:var(--gris-400)">—</span>'}</td>
+          <td>${f.telefono || '—'}</td>
+          <td><strong>${miembros.length}</strong> ${miembros.length === 1 ? 'miembro' : 'miembros'}</td>
+          <td class="right">${saldoPendiente > 0 ? `<strong style="color:var(--rojo)">${ui.formatMoney(saldoPendiente)}</strong>` : '<span style="color:var(--verde);font-size:12px;font-weight:600">Al día</span>'}</td>
+          <td style="color:var(--gris-400);font-size:18px">›</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  document.getElementById("filtroFamBusqueda").addEventListener("input", actualizar);
+  actualizar();
+}
+
+let famTabActivo = "miembros";
+
+function verFamilia(id) {
+  const f = FAMILIAS.find(x => x.id === id);
+  if (!f) return;
+  famTabActivo = "miembros";
+
+  const miembros = PACIENTES.filter(p => p.familia_id === id);
+  const sesionesFam = SESIONES.filter(s => miembros.some(m => m.id === s.paciente_id));
+  const saldoPendiente = sesionesFam.filter(s => !s.cobro_paciente_recibido).reduce((sum,s) => sum + s.monto_paciente, 0);
+  const totalPagado = sesionesFam.filter(s => s.cobro_paciente_recibido).reduce((sum,s) => sum + s.monto_paciente, 0);
+  const enMora = saldoPendiente > 0;
+  const responsable = f.responsable_id ? PACIENTES.find(p => p.id === f.responsable_id) : null;
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">FA</span>
+        <div>
+          <div class="name">Familia ${f.apellido}</div>
+          <div class="meta">${miembros.length} ${miembros.length === 1 ? 'miembro' : 'miembros'} · ${f.telefono || 'Sin teléfono'}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+
+    ${enMora ? `
+      <div style="background:var(--rojo-bg);color:#991b1b;padding:14px 28px;margin:16px 24px 0;border-radius:12px;border-left:4px solid var(--rojo);font-weight:600">
+        Esta familia tiene ${ui.formatMoney(saldoPendiente)} en cobros pendientes (${sesionesFam.filter(s=>!s.cobro_paciente_recibido).length} sesiones)
+      </div>
+    ` : ''}
+
+    <div class="detail-hero">
+      <div class="detail-avatar">${f.apellido.substring(0,2).toUpperCase()}</div>
+      <div class="detail-hero-main">
+        <h2>Familia ${f.apellido}</h2>
+        <div class="meta">
+          ${responsable ? `Responsable: ${responsable.nombre_completo}` : 'Sin responsable asignado'} · ${f.telefono || 'Sin teléfono'}
+        </div>
+        <div class="status-pill">${enMora ? 'EN MORA' : 'AL DÍA'}</div>
+        <div class="actions">
+          ${f.telefono ? `<button class="btn-whatsapp" onclick="window.open('https://wa.me/' + '${f.telefono}'.replace(/[^0-9]/g, ''))">WhatsApp</button>` : ''}
+          ${f.telefono ? `<button class="btn-action-light" onclick="window.location.href='tel:${f.telefono}'">Llamar</button>` : ''}
+          ${enMora ? `<button class="btn-action-amarillo" onclick="cerrarModal();setTimeout(() => registrarCobroFamilia(${id}), 100)">Registrar pago</button>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-stats">
+      <div class="detail-stat">
+        <div class="num">${miembros.length}</div>
+        <div class="lbl">Miembros</div>
+        <div class="sub">en la familia</div>
+      </div>
+      <div class="detail-stat">
+        <div class="num">${sesionesFam.length}</div>
+        <div class="lbl">Sesiones</div>
+        <div class="sub">total histórico</div>
+      </div>
+      <div class="detail-stat green">
+        <div class="num green">${ui.formatMoney(totalPagado)}</div>
+        <div class="lbl">Total pagado</div>
+        <div class="sub">por la familia</div>
+      </div>
+      <div class="detail-stat ${enMora ? 'orange' : 'green'}">
+        <div class="num ${enMora ? 'orange' : 'green'}">${ui.formatMoney(saldoPendiente)}</div>
+        <div class="lbl">Pendiente</div>
+        <div class="sub">${sesionesFam.filter(s=>!s.cobro_paciente_recibido).length} sesiones</div>
+      </div>
+    </div>
+
+    <div class="detail-tabs">
+      <button class="detail-tab active" onclick="cambiarTabFam(${id}, 'miembros')">Miembros <span class="badge-num">${miembros.length}</span></button>
+      <button class="detail-tab" onclick="cambiarTabFam(${id}, 'sesiones')">Sesiones <span class="badge-num">${sesionesFam.length}</span></button>
+      <button class="detail-tab" onclick="cambiarTabFam(${id}, 'datos')">Datos / Editar</button>
+    </div>
+
+    <div class="detail-tab-content" id="famTabContent">${contenidoTabFam(f, "miembros")}</div>
+
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+      <button class="btn-primary" onclick="cambiarTabFam(${id}, 'datos')">Editar datos</button>
+    </div>
+  `);
+}
+
+function cambiarTabFam(id, tab) {
+  famTabActivo = tab;
+  const f = FAMILIAS.find(x => x.id === id);
+  document.querySelectorAll(".detail-tab").forEach(t => {
+    const txt = t.textContent.trim().toLowerCase();
+    t.classList.toggle("active", txt.startsWith(tab));
+  });
+  document.getElementById("famTabContent").innerHTML = contenidoTabFam(f, tab);
+}
+
+function contenidoTabFam(f, tab) {
+  const miembros = PACIENTES.filter(p => p.familia_id === f.id);
+  const sesionesFam = SESIONES.filter(s => miembros.some(m => m.id === s.paciente_id)).sort((a,b) => b.fecha - a.fecha);
+
+  if (tab === "miembros") {
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="margin:0">Miembros de la familia</h3>
+        <button class="btn-secondary btn-sm" onclick="modalAgregarMiembro(${f.id})">+ Agregar miembro</button>
+      </div>
+      ${miembros.length === 0 ? `
+        <div class="empty-state">
+          Esta familia no tiene miembros aún.<br>
+          <button class="btn-primary" style="margin-top:12px" onclick="modalAgregarMiembro(${f.id})">+ Agregar primer miembro</button>
+        </div>
+      ` : `
+        <div class="card">
+          <table>
+            <thead><tr><th>Paciente</th><th>Grupo</th><th>Edad</th><th>Rol</th><th></th></tr></thead>
+            <tbody>
+              ${miembros.map(p => `
+                <tr class="clickable" onclick="cerrarModal();setTimeout(() => verPaciente(${p.id}), 100)">
+                  <td>
+                    <div class="id-cell">
+                      <span class="code-tag">PA</span>
+                      <strong>${p.nombre_completo}</strong>
+                    </div>
+                  </td>
+                  <td>${ui.badgeGrupo(p.grupo_etario)}</td>
+                  <td>${p.edad || '—'}</td>
+                  <td>${f.responsable_id === p.id ? '<span class="badge badge-si">RESPONSABLE</span>' : '<span style="color:var(--gris-400)">Miembro</span>'}</td>
+                  <td>
+                    <button class="btn-secondary btn-sm" onclick="event.stopPropagation();sacarDeFamilia(${p.id}, ${f.id})" style="color:var(--rojo);border-color:var(--rojo)">Sacar</button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `}
+    `;
+  }
+
+  if (tab === "sesiones") {
+    if (sesionesFam.length === 0) return '<div class="empty-state">Esta familia aún no tiene sesiones registradas</div>';
+    return `
+      <div class="card">
+        <table>
+          <thead><tr><th>Fecha</th><th>Paciente</th><th>Profesional</th><th>Pagó paciente</th><th>Itzjak</th></tr></thead>
+          <tbody>
+            ${sesionesFam.slice(0, 30).map(s => `
+              <tr>
+                <td>${ui.formatDate(s.fecha)}</td>
+                <td>${s.paciente_nombre}</td>
+                <td>${s.profesional_nombre}</td>
+                <td>${s.cobro_paciente_recibido ? '<span class="badge badge-paid">Sí</span>' : '<span class="badge badge-pending">No</span>'} ${ui.formatMoney(s.monto_paciente)}</td>
+                <td>${s.estado_pago_itzjak === "pagado" ? '<span class="badge badge-paid">Pagado</span>' : '<span class="badge badge-pending">Pendiente</span>'} ${ui.formatMoney(s.monto_itzjak)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (tab === "datos") {
+    return `
+      <h3>Editar familia</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px">
+        <div class="form-group">
+          <label>Apellido familiar *</label>
+          <input type="text" id="ef_apellido" value="${f.apellido}">
+        </div>
+        <div class="form-group">
+          <label>Teléfono familiar</label>
+          <input type="text" id="ef_telefono" value="${f.telefono || ''}" placeholder="0414-1234567">
+        </div>
+        <div class="form-group">
+          <label>Email familiar</label>
+          <input type="email" id="ef_email" value="${f.email || ''}" placeholder="familia@email.com">
+        </div>
+        <div class="form-group">
+          <label>Responsable de pagos</label>
+          <select id="ef_responsable">
+            <option value="">— Sin responsable asignado —</option>
+            ${miembros.map(m => `<option value="${m.id}" ${f.responsable_id === m.id ? 'selected' : ''}>${m.nombre_completo}</option>`).join("")}
+          </select>
+          <small style="color:var(--gris-500);font-size:11px">Quién es el contacto principal y/o responsable financiero (papá, mamá, etc).</small>
+        </div>
+        <div class="form-group">
+          <label>Capacidad de pago</label>
+          <select id="ef_capacidad">
+            ${["Alta","Media","Baja","Subsidio total"].map(c => `<option ${(f.capacidad_pago||'Media') === c ? 'selected' : ''}>${c}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Notas</label>
+          <textarea id="ef_notas" rows="3" placeholder="Observaciones, contactos alternos, contexto familiar...">${f.notas || ''}</textarea>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button class="btn-secondary" onclick="confirmarBorrarFamilia(${f.id})" style="color:var(--rojo);border-color:var(--rojo)">Eliminar familia</button>
+        <button class="btn-amarillo" onclick="guardarEdicionFamilia(${f.id})">Guardar cambios</button>
+      </div>
+    `;
+  }
+  return "";
+}
+
+function guardarEdicionFamilia(id) {
+  const f = FAMILIAS.find(x => x.id === id);
+  if (!f) return;
+  const apellido = document.getElementById("ef_apellido").value.trim();
+  if (!apellido) { alert("El apellido es obligatorio"); return; }
+
+  f.apellido = apellido;
+  f.telefono = document.getElementById("ef_telefono").value.trim();
+  f.email = document.getElementById("ef_email").value.trim();
+  f.responsable_id = parseInt(document.getElementById("ef_responsable").value) || null;
+  f.responsable_nombre = f.responsable_id ? (PACIENTES.find(p => p.id === f.responsable_id)?.nombre_completo || '') : '';
+  f.capacidad_pago = document.getElementById("ef_capacidad").value;
+  f.notas = document.getElementById("ef_notas").value.trim();
+
+  guardarFamilias();
+  cerrarModal();
+  setTimeout(() => verFamilia(id), 50);
+}
+
+function confirmarBorrarFamilia(id) {
+  const f = FAMILIAS.find(x => x.id === id);
+  if (!f) return;
+  const miembros = PACIENTES.filter(p => p.familia_id === id);
+  if (miembros.length > 0) {
+    if (!confirm(`La familia "${f.apellido}" tiene ${miembros.length} miembros. ¿Eliminar la familia? (Los pacientes NO se borran, solo dejan de pertenecer a esta familia)`)) return;
+    miembros.forEach(p => { p.familia_id = null; });
+    guardarPacientes();
+  } else {
+    if (!confirm(`¿Eliminar familia "${f.apellido}"?`)) return;
+  }
+  FAMILIAS = FAMILIAS.filter(x => x.id !== id);
+  guardarFamilias();
+  cerrarModal();
+  renderFamilias();
+}
+
+function modalNuevaFamilia() {
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">FA</span>
+        <div>
+          <div class="name">Nueva familia</div>
+          <div class="meta">Crea el grupo familiar primero, luego agregas miembros</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Apellido familiar *</label>
+          <input type="text" id="nf_apellido" placeholder="Ej: Cohen, Levi, Mizrahi">
+        </div>
+        <div class="form-group">
+          <label>Teléfono familiar</label>
+          <input type="text" id="nf_telefono" placeholder="0414-1234567">
+          <small style="color:var(--gris-500);font-size:11px">Número de contacto principal de la familia</small>
+        </div>
+        <div class="form-group">
+          <label>Email familiar</label>
+          <input type="email" id="nf_email" placeholder="familia@email.com">
+        </div>
+        <div class="form-group">
+          <label>Capacidad de pago</label>
+          <select id="nf_capacidad">
+            <option>Media</option>
+            <option>Alta</option>
+            <option>Baja</option>
+            <option>Subsidio total</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Notas (opcional)</label>
+          <textarea id="nf_notas" rows="2" placeholder="Contexto familiar, contactos alternos, observaciones..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="crearFamilia()">Crear familia</button>
+    </div>
+  `);
+}
+
+function crearFamilia() {
+  const apellido = document.getElementById("nf_apellido").value.trim();
+  if (!apellido) { alert("El apellido es obligatorio"); return; }
+
+  const nueva = {
+    id: nuevoId(FAMILIAS),
+    apellido,
+    telefono: document.getElementById("nf_telefono").value.trim(),
+    email: document.getElementById("nf_email").value.trim(),
+    capacidad_pago: document.getElementById("nf_capacidad").value,
+    notas: document.getElementById("nf_notas").value.trim(),
+    responsable_id: null,
+    responsable_nombre: '',
+    creada_en: new Date(),
+  };
+  FAMILIAS.push(nueva);
+  guardarFamilias();
+  cerrarModal();
+  renderFamilias();
+  setTimeout(() => verFamilia(nueva.id), 100);
+}
+
+// === Agregar miembro a una familia ===
+function modalAgregarMiembro(familiaId) {
+  const f = FAMILIAS.find(x => x.id === familiaId);
+  if (!f) return;
+  const sinFamilia = PACIENTES.filter(p => !p.familia_id);
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">FA</span>
+        <div>
+          <div class="name">Agregar miembro a Familia ${f.apellido}</div>
+          <div class="meta">Asigna un paciente existente o crea uno nuevo</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div class="alert-card info" style="margin-bottom:16px">
+        Tienes 2 opciones: asignar a un paciente existente, o crear un nuevo paciente directamente como miembro.
+      </div>
+
+      <h3>Opción 1: Asignar paciente existente</h3>
+      ${sinFamilia.length > 0 ? `
+        <div class="form-group">
+          <label>Paciente sin familia</label>
+          <select id="am_paciente">
+            <option value="">— Selecciona —</option>
+            ${sinFamilia.map(p => `<option value="${p.id}">${p.nombre_completo} (${p.grupo_etario || '—'})</option>`).join("")}
+          </select>
+        </div>
+        <button class="btn-amarillo btn-sm" onclick="asignarPacienteAFamilia(${familiaId})">Asignar a esta familia</button>
+      ` : '<p style="color:var(--gris-400);font-size:13px">No hay pacientes sin familia. Todos están ya asignados.</p>'}
+
+      <hr style="margin:24px 0;border:none;border-top:1px solid var(--gris-200)">
+
+      <h3>Opción 2: Crear nuevo paciente como miembro</h3>
+      <button class="btn-primary" onclick="modalNuevoPacienteEnFamilia(${familiaId})">+ Crear nuevo paciente</button>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+    </div>
+  `);
+}
+
+function asignarPacienteAFamilia(familiaId) {
+  const pacId = parseInt(document.getElementById("am_paciente").value);
+  if (!pacId) { alert("Selecciona un paciente"); return; }
+  const p = PACIENTES.find(x => x.id === pacId);
+  p.familia_id = familiaId;
+  // Heredar teléfono familiar si el paciente no tiene
+  const f = FAMILIAS.find(x => x.id === familiaId);
+  if (!p.telefono && f.telefono) p.telefono = f.telefono;
+  guardarPacientes();
+  cerrarModal();
+  setTimeout(() => verFamilia(familiaId), 100);
+}
+
+function sacarDeFamilia(pacId, famId) {
+  const p = PACIENTES.find(x => x.id === pacId);
+  if (!p) return;
+  if (!confirm(`¿Sacar a ${p.nombre_completo} de esta familia? El paciente sigue existiendo, solo deja de pertenecer al grupo familiar.`)) return;
+  p.familia_id = null;
+  // Si era el responsable, limpiar
+  const f = FAMILIAS.find(x => x.id === famId);
+  if (f && f.responsable_id === pacId) {
+    f.responsable_id = null;
+    f.responsable_nombre = '';
+    guardarFamilias();
+  }
+  guardarPacientes();
+  cerrarModal();
+  setTimeout(() => verFamilia(famId), 50);
+}
+
+function modalNuevoPacienteEnFamilia(familiaId) {
+  const f = FAMILIAS.find(x => x.id === familiaId);
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">PA</span>
+        <div>
+          <div class="name">Nuevo miembro de Familia ${f.apellido}</div>
+          <div class="meta">Será creado y asignado automáticamente</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Nombre completo *</label>
+          <input type="text" id="npa_nombre" placeholder="Ej: Sara ${f.apellido}">
+        </div>
+        <div class="form-group">
+          <label>Cédula</label>
+          <input type="text" id="npa_cedula" placeholder="V-12345678">
+        </div>
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="text" id="npa_telefono" value="${f.telefono || ''}" placeholder="0414-1234567">
+        </div>
+        <div class="form-group">
+          <label>Grupo etario *</label>
+          <select id="npa_grupo">
+            <option value="NNA">NNA (Niño/Adolescente)</option>
+            <option value="Adulto">Adulto</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Sexo</label>
+          <select id="npa_sexo">
+            <option>Femenino</option>
+            <option>Masculino</option>
+            <option>Otro</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Edad</label>
+          <input type="number" id="npa_edad" min="0" max="120">
+        </div>
+        <div class="form-group">
+          <label>Colegio</label>
+          <select id="npa_colegio">
+            <option value="">— Ninguno —</option>
+            <option>Moral y Luces</option>
+            <option>Or Jabad</option>
+            <option>Sinai</option>
+            <option>Maor HaTorah</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Motivo de consulta</label>
+          <textarea id="npa_motivo" rows="2" placeholder="Razón principal por la que viene a Itzjak"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="npa_subsidio" checked>
+            Requiere subsidio
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="npa_referido">
+            Referido por colegio
+          </label>
+        </div>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="crearPacienteEnFamilia(${familiaId})">Crear y asignar</button>
+    </div>
+  `);
+}
+
+function crearPacienteEnFamilia(familiaId) {
+  const nombre = document.getElementById("npa_nombre").value.trim();
+  if (!nombre) { alert("El nombre es obligatorio"); return; }
+
+  const nuevo = {
+    id: nuevoId(PACIENTES),
+    nombre_completo: nombre,
+    cedula: document.getElementById("npa_cedula").value.trim() || `V-${Math.floor(Math.random()*900000+10000000)}`,
+    telefono: document.getElementById("npa_telefono").value.trim(),
+    grupo_etario: document.getElementById("npa_grupo").value,
+    sexo: document.getElementById("npa_sexo").value,
+    edad: parseInt(document.getElementById("npa_edad").value) || null,
+    colegio: document.getElementById("npa_colegio").value || null,
+    motivo_consulta: document.getElementById("npa_motivo").value.trim() || "Pendiente de evaluar",
+    requiere_subsidio: document.getElementById("npa_subsidio").checked,
+    referido_colegio: document.getElementById("npa_referido").checked,
+    ts_canalizado: false,
+    estado: "activo",
+    tratamientos: [],
+    familia_id: familiaId,
+    creado_en: new Date(),
+  };
+  PACIENTES.unshift(nuevo);
+  guardarPacientes();
+  cerrarModal();
+  setTimeout(() => verFamilia(familiaId), 100);
+}
+
+// === Cobro a familia (suma todas las sesiones pendientes de todos los miembros) ===
+function registrarCobroFamilia(familiaId) {
+  const f = FAMILIAS.find(x => x.id === familiaId);
+  if (!f) return;
+  const miembros = PACIENTES.filter(p => p.familia_id === familiaId);
+  const sesionesPend = SESIONES.filter(s => miembros.some(m => m.id === s.paciente_id) && !s.cobro_paciente_recibido && s.monto_paciente > 0);
+  if (!sesionesPend.length) { alert(`Familia ${f.apellido} no tiene cobros pendientes`); return; }
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">CB</span>
+        <div>
+          <div class="name">Cobro Familia ${f.apellido}</div>
+          <div class="meta">${sesionesPend.length} sesiones pendientes de ${miembros.length} miembros</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div class="alert-card info" style="margin-bottom:16px">
+        Para cada sesión: <strong>"Pagó"</strong> = cerró el cobro · <strong>"Itzjak cubre"</strong> = Itzjak asume y se suma a honorarios pendientes
+      </div>
+      <div style="background:var(--gris-50);border-radius:10px;padding:12px;max-height:380px;overflow-y:auto">
+        ${sesionesPend.map(s => `
+          <div style="background:white;padding:14px;border-radius:10px;margin-bottom:10px;border:1px solid var(--gris-200)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+              <div>
+                <strong>${s.paciente_nombre}</strong> · ${ui.formatDate(s.fecha)}<br>
+                <small style="color:var(--gris-500)">con ${s.profesional_nombre} · hace ${diasDesde(s.fecha)}d</small>
+              </div>
+              <div style="font-weight:700;color:var(--naranja);font-size:16px">${ui.formatMoney(s.monto_paciente)}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn-success btn-sm" onclick="resolverCobroFam(${s.id}, 'pagado', ${familiaId})">✓ Pagó</button>
+              <button class="btn-amarillo btn-sm" onclick="resolverCobroFam(${s.id}, 'itzjak', ${familiaId})">Itzjak cubre</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+    </div>
+  `);
+}
+
+function resolverCobroFam(sesionId, accion, familiaId) {
+  const s = SESIONES.find(x => x.id === sesionId);
+  if (!s) return;
+  if (accion === 'pagado') {
+    s.cobro_paciente_recibido = true;
+  } else if (accion === 'itzjak') {
+    s.monto_itzjak = s.monto_itzjak + s.monto_paciente;
+    s.monto_paciente = 0;
+    s.cobro_paciente_recibido = true;
+    s.estado_pago_itzjak = "pendiente";
+    s.itzjak_cubrio_paciente = true;
+  }
+  guardarSesiones();
+  cerrarModal();
+  // Reabrir si quedan más
+  const f = FAMILIAS.find(x => x.id === familiaId);
+  const miembros = PACIENTES.filter(p => p.familia_id === familiaId);
+  const aun = SESIONES.filter(x => miembros.some(m => m.id === x.paciente_id) && !x.cobro_paciente_recibido && x.monto_paciente > 0);
+  if (aun.length > 0) {
+    setTimeout(() => registrarCobroFamilia(familiaId), 100);
+  } else {
+    setTimeout(() => verFamilia(familiaId), 100);
+  }
+}
+
+// ============================================================
+// PROFESIONALES — CRUD COMPLETO
+// ============================================================
+
+function renderProfesionales() {
+  document.getElementById("view-profesionales").innerHTML = `
+    <div class="header-row">
+      <h1>Profesionales</h1>
+      <button class="btn-primary" onclick="modalNuevoProfesional()">+ Nuevo profesional</button>
+    </div>
+    <p class="muted" style="margin-bottom:20px">Tarifas se definen por paciente. Aquí ves la frecuencia de pago y carga.</p>
+    <div class="filters">
+      <input type="search" id="filtroProfBusqueda" placeholder="Buscar profesional...">
+      <select id="filtroProfEsp">
+        <option value="">Todas las especialidades</option>
+        ${[...new Set(PROFESIONALES.map(p => p.especialidad))].sort().map(e => `<option value="${e}">${e}</option>`).join("")}
+      </select>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Profesional</th><th>Especialidad</th><th>Honorario</th><th>Frecuencia</th><th>Último pago</th><th>Pacientes</th><th></th></tr></thead>
+        <tbody id="tablaProfBody"></tbody>
+      </table>
+    </div>
+  `;
+
+  function actualizar() {
+    const busq = document.getElementById("filtroProfBusqueda").value.toLowerCase();
+    const esp = document.getElementById("filtroProfEsp").value;
+    const filt = PROFESIONALES.filter(p => {
+      if (busq && !p.nombre.toLowerCase().includes(busq)) return false;
+      if (esp && p.especialidad !== esp) return false;
+      return true;
+    });
+    document.getElementById("tablaProfBody").innerHTML = filt.length ? filt.map(p => {
+      const n = PACIENTES.filter(pa => pa.tratamientos.some(t => t.profesional_id === p.id)).length;
+      return `
+        <tr class="clickable" onclick="verProfesional(${p.id})">
+          <td>
+            <div class="id-cell">
+              <span class="code-tag">PR</span>
+              <div>
+                <div style="font-weight:600">${p.nombre}</div>
+                <div style="font-size:11px;color:var(--gris-500)">${p.email || p.telefono || 'Sin contacto'}</div>
+              </div>
+            </div>
+          </td>
+          <td>${p.especialidad}</td>
+          <td><strong style="color:var(--azul)">${ui.formatMoney(p.honorario_sesion)}</strong></td>
+          <td>${p.frecuencia_pago}</td>
+          <td>${ui.formatDate(p.ultimo_pago)} <small style="color:var(--gris-400)">(${diasDesde(p.ultimo_pago)}d)</small></td>
+          <td><strong>${n}</strong></td>
+          <td style="color:var(--gris-400);font-size:18px">›</td>
+        </tr>
+      `;
+    }).join("") : '<tr><td colspan="7" class="empty-state">Sin profesionales</td></tr>';
+  }
+  ["filtroProfBusqueda","filtroProfEsp"].forEach(id => document.getElementById(id).addEventListener("input", actualizar));
+  actualizar();
+}
+
+let profTabActivo = "resumen";
+
+function verProfesional(id) {
+  const p = PROFESIONALES.find(x => x.id === id);
+  if (!p) return;
+  profTabActivo = "resumen";
+
+  const pacientesDelProf = PACIENTES.filter(pa => pa.tratamientos.some(t => t.profesional_id === id));
+  const sesionesDelProf = SESIONES.filter(s => s.profesional_id === id);
+  const sesionesPendientes = sesionesDelProf.filter(s => s.estado_pago_itzjak === "pendiente");
+  const totalPendiente = sesionesPendientes.reduce((sum, s) => sum + s.monto_itzjak, 0);
+  const totalPagado = sesionesDelProf.filter(s => s.estado_pago_itzjak === "pagado").reduce((sum, s) => sum + s.monto_itzjak, 0);
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">PR</span>
+        <div>
+          <div class="name">${p.nombre}</div>
+          <div class="meta">${p.especialidad}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+
+    <div class="detail-hero">
+      <div class="detail-avatar">${ui.initials(p.nombre)}</div>
+      <div class="detail-hero-main">
+        <h2>${p.nombre}</h2>
+        <div class="meta">${p.especialidad} · ${p.frecuencia_pago} · ${p.metodo_pago_preferido || 'Zelle'}</div>
+        <div class="status-pill">${p.activo === false ? 'INACTIVO' : 'ACTIVO'}</div>
+        <div class="actions">
+          ${p.telefono ? `<button class="btn-whatsapp" onclick="window.open('https://wa.me/' + '${p.telefono}'.replace(/[^0-9]/g, ''))">WhatsApp</button>` : ''}
+          ${p.telefono ? `<button class="btn-action-light" onclick="window.location.href='tel:${p.telefono}'">Llamar</button>` : ''}
+          ${p.email ? `<button class="btn-action-light" onclick="window.location.href='mailto:${p.email}'">Email</button>` : ''}
+          <button class="btn-action-amarillo" onclick="cerrarModal();cambiarVista('honorarios')">Ver honorarios</button>
+        </div>
+      </div>
+      <div class="detail-score">
+        <div class="num">${pacientesDelProf.length}</div>
+        <div class="max">pacientes</div>
+        <div class="label">${sesionesDelProf.length} sesiones</div>
+      </div>
+    </div>
+
+    <div class="detail-stats">
+      <div class="detail-stat">
+        <div class="num">${pacientesDelProf.length}</div>
+        <div class="lbl">Pacientes</div>
+        <div class="sub">activos</div>
+      </div>
+      <div class="detail-stat">
+        <div class="num">${sesionesDelProf.length}</div>
+        <div class="lbl">Sesiones</div>
+        <div class="sub">total histórico</div>
+      </div>
+      <div class="detail-stat green">
+        <div class="num green">${ui.formatMoney(totalPagado)}</div>
+        <div class="lbl">Total pagado</div>
+        <div class="sub">por Itzjak</div>
+      </div>
+      <div class="detail-stat ${totalPendiente > 0 ? 'orange' : 'green'}">
+        <div class="num ${totalPendiente > 0 ? 'orange' : 'green'}">${ui.formatMoney(totalPendiente)}</div>
+        <div class="lbl">Pendiente</div>
+        <div class="sub">${sesionesPendientes.length} sesiones</div>
+      </div>
+    </div>
+
+    <div class="detail-tabs">
+      <button class="detail-tab active" onclick="cambiarTabProf(${id}, 'resumen')">Resumen</button>
+      <button class="detail-tab" onclick="cambiarTabProf(${id}, 'pacientes')">Pacientes <span class="badge-num">${pacientesDelProf.length}</span></button>
+      <button class="detail-tab" onclick="cambiarTabProf(${id}, 'sesiones')">Sesiones <span class="badge-num">${sesionesDelProf.length}</span></button>
+      <button class="detail-tab" onclick="cambiarTabProf(${id}, 'datos')">Datos / Editar</button>
+    </div>
+
+    <div class="detail-tab-content" id="profTabContent">${contenidoTabProf(p, "resumen")}</div>
+
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+      <button class="btn-primary" onclick="cambiarTabProf(${id}, 'datos')">Editar datos</button>
+    </div>
+  `);
+}
+
+function cambiarTabProf(id, tab) {
+  profTabActivo = tab;
+  const p = PROFESIONALES.find(x => x.id === id);
+  document.querySelectorAll(".detail-tab").forEach(t => {
+    const txt = t.textContent.trim().toLowerCase();
+    t.classList.toggle("active", txt.startsWith(tab));
+  });
+  document.getElementById("profTabContent").innerHTML = contenidoTabProf(p, tab);
+}
+
+function contenidoTabProf(p, tab) {
+  const pacientesDelProf = PACIENTES.filter(pa => pa.tratamientos.some(t => t.profesional_id === p.id));
+  const sesionesDelProf = SESIONES.filter(s => s.profesional_id === p.id).sort((a,b) => b.fecha - a.fecha);
+
+  if (tab === "resumen") {
+    return `
+      <h3>Honorarios y pago</h3>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:18px">
+        <div style="background:var(--azul-bg);padding:14px;border-radius:10px;border-left:4px solid var(--azul)">
+          <div style="font-size:11px;color:var(--azul);text-transform:uppercase;letter-spacing:1px;font-weight:700">Honorario por sesión</div>
+          <div style="margin-top:4px;font-size:22px;font-weight:700;color:var(--azul)">${ui.formatMoney(p.honorario_sesion)}</div>
+        </div>
+        <div style="background:var(--gris-50);padding:14px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Frecuencia de pago</div>
+          <div style="margin-top:4px;font-weight:600;font-size:15px">${p.frecuencia_pago}</div>
+        </div>
+        <div style="background:var(--gris-50);padding:12px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Método preferido</div>
+          <div style="margin-top:4px;font-weight:600">${p.metodo_pago_preferido || 'No especificado'}</div>
+        </div>
+        <div style="background:var(--gris-50);padding:12px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Último pago</div>
+          <div style="margin-top:4px;font-weight:600">${ui.formatDate(p.ultimo_pago)}</div>
+        </div>
+        <div style="background:var(--gris-50);padding:12px;border-radius:10px;grid-column:1/-1">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Referencia/Cuenta</div>
+          <div style="margin-top:4px;font-weight:600">${p.referencia_pago || '—'}</div>
+        </div>
+      </div>
+      <h3>Contacto</h3>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+        <div style="background:var(--gris-50);padding:12px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Teléfono</div>
+          <div style="margin-top:4px;font-weight:600">${p.telefono || '—'}</div>
+        </div>
+        <div style="background:var(--gris-50);padding:12px;border-radius:10px">
+          <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Email</div>
+          <div style="margin-top:4px;font-weight:600">${p.email || '—'}</div>
+        </div>
+      </div>
+      ${p.notas ? `<h3 style="margin-top:18px">Notas</h3><p style="color:var(--gris-700);background:var(--gris-50);padding:12px;border-radius:10px">${p.notas}</p>` : ''}
+    `;
+  }
+
+  if (tab === "pacientes") {
+    if (pacientesDelProf.length === 0) {
+      return '<div class="empty-state">Este profesional no tiene pacientes asignados</div>';
+    }
+    return `
+      <div class="card">
+        <table>
+          <thead><tr><th>Paciente</th><th>Grupo</th><th>Tarifa total</th><th>Cubre Itzjak</th></tr></thead>
+          <tbody>
+            ${pacientesDelProf.map(pa => {
+              const trat = pa.tratamientos.find(t => t.profesional_id === p.id);
+              return `
+                <tr class="clickable" onclick="cerrarModal();setTimeout(() => verPaciente(${pa.id}), 100)">
+                  <td><strong>${pa.nombre_completo}</strong></td>
+                  <td>${ui.badgeGrupo(pa.grupo_etario)}</td>
+                  <td>${ui.formatMoney(trat.tarifa_total)}</td>
+                  <td style="color:var(--rojo);font-weight:700">${ui.formatMoney(trat.monto_itzjak)}</td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (tab === "sesiones") {
+    if (sesionesDelProf.length === 0) {
+      return '<div class="empty-state">Sin sesiones registradas</div>';
+    }
+    return `
+      <div class="card">
+        <table>
+          <thead><tr><th>Fecha</th><th>Paciente</th><th>Estado pago</th><th>Itzjak</th></tr></thead>
+          <tbody>
+            ${sesionesDelProf.slice(0, 30).map(s => `
+              <tr>
+                <td>${ui.formatDate(s.fecha)}</td>
+                <td>${s.paciente_nombre}</td>
+                <td>${s.estado_pago_itzjak === "pagado" ? '<span class="badge badge-paid">Pagado</span>' : '<span class="badge badge-pending">Pendiente</span>'}</td>
+                <td style="font-weight:700">${ui.formatMoney(s.monto_itzjak)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  if (tab === "datos") {
+    return `
+      <h3>Editar profesional</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px">
+        <div class="form-group">
+          <label>Nombre completo *</label>
+          <input type="text" id="ed_nombre" value="${p.nombre}">
+        </div>
+        <div class="form-group">
+          <label>Especialidad *</label>
+          <select id="ed_especialidad">
+            ${["Psicología","Psicoterapia","Psiquiatría","Terapia Ocupacional","Psicopedagogía","Terapia de Lenguaje","Terapia de Familia","Terapia de Pareja","Eval. Neuropsicológica","Eval. Psicológica","Triaje","Otra"].map(e =>
+              `<option ${p.especialidad === e ? 'selected' : ''}>${e}</option>`
+            ).join("")}
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1; background:var(--azul-bg); padding:14px; border-radius:10px; border-left:4px solid var(--azul)">
+          <label style="color:var(--azul)">Honorario por sesión ($) *</label>
+          <input type="number" id="ed_honorario" value="${p.honorario_sesion || ''}" step="0.01" min="0">
+          <small style="color:var(--gris-700);font-size:11px">Tarifa total que cobra por sesión. Se usa como predeterminado al registrar sesiones.</small>
+        </div>
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="text" id="ed_telefono" value="${p.telefono || ''}" placeholder="0414-1234567">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="ed_email" value="${p.email || ''}" placeholder="profesional@email.com">
+        </div>
+        <div class="form-group">
+          <label>Frecuencia de pago *</label>
+          <select id="ed_frecuencia">
+            ${["Por sesión","Semanal","Quincenal","Mensual","Por evaluación","A demanda"].map(f =>
+              `<option ${p.frecuencia_pago === f ? 'selected' : ''}>${f}</option>`
+            ).join("")}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Método de pago preferido</label>
+          <select id="ed_metodo">
+            ${["Zelle","Venmo","Bolívares","Efectivo","Transferencia"].map(m =>
+              `<option ${(p.metodo_pago_preferido || 'Zelle') === m ? 'selected' : ''}>${m}</option>`
+            ).join("")}
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Referencia/Cuenta para pagos</label>
+          <input type="text" id="ed_referencia" value="${p.referencia_pago || ''}" placeholder="Ej: email Zelle, @venmo, número Mercantil">
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Último pago realizado</label>
+          <input type="date" id="ed_ultimo_pago" value="${(p.ultimo_pago instanceof Date ? p.ultimo_pago.toISOString().slice(0,10) : p.ultimo_pago) || ''}">
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label class="checkbox-label">
+            <input type="checkbox" id="ed_activo" ${p.activo !== false ? 'checked' : ''}>
+            Profesional activo (desmarcar para desactivar sin borrar)
+          </label>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Notas</label>
+          <textarea id="ed_notas" rows="3">${p.notas || ''}</textarea>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button class="btn-secondary" onclick="confirmarBorrarProfesional(${p.id})" style="color:var(--rojo);border-color:var(--rojo)">Eliminar</button>
+        <button class="btn-amarillo" onclick="guardarEdicionProfesional(${p.id})">Guardar cambios</button>
+      </div>
+    `;
+  }
+  return "";
+}
+
+function guardarEdicionProfesional(id) {
+  const p = PROFESIONALES.find(x => x.id === id);
+  if (!p) return;
+  const nombre = document.getElementById("ed_nombre").value.trim();
+  const honorario = parseFloat(document.getElementById("ed_honorario").value);
+  if (!nombre) { alert("El nombre es obligatorio"); return; }
+  if (!honorario || honorario <= 0) { alert("El honorario por sesión es obligatorio"); return; }
+
+  p.nombre = nombre;
+  p.especialidad = document.getElementById("ed_especialidad").value;
+  p.honorario_sesion = honorario;
+  p.telefono = document.getElementById("ed_telefono").value.trim();
+  p.email = document.getElementById("ed_email").value.trim();
+  p.frecuencia_pago = document.getElementById("ed_frecuencia").value;
+  p.metodo_pago_preferido = document.getElementById("ed_metodo").value;
+  p.referencia_pago = document.getElementById("ed_referencia").value.trim();
+  p.ultimo_pago = document.getElementById("ed_ultimo_pago").value;
+  p.activo = document.getElementById("ed_activo").checked;
+  p.notas = document.getElementById("ed_notas").value.trim();
+
+  // Actualizar nombre/especialidad en sesiones y tratamientos (denormalizado)
+  SESIONES.forEach(s => { if (s.profesional_id === id) s.profesional_nombre = nombre; });
+  PACIENTES.forEach(pa => pa.tratamientos.forEach(t => { if (t.profesional_id === id) { t.profesional_nombre = nombre; t.especialidad = p.especialidad; }}));
+
+  guardarProfesionales();
+  guardarSesiones();
+  guardarPacientes();
+
+  cerrarModal();
+  setTimeout(() => verProfesional(id), 50);
+}
+
+function confirmarBorrarProfesional(id) {
+  const p = PROFESIONALES.find(x => x.id === id);
+  if (!p) return;
+  const tieneSesiones = SESIONES.some(s => s.profesional_id === id);
+  const tienePacientes = PACIENTES.some(pa => pa.tratamientos.some(t => t.profesional_id === id));
+  if (tieneSesiones || tienePacientes) {
+    alert(`No se puede eliminar a "${p.nombre}" porque tiene sesiones o pacientes asignados. Si quieres ocultarlo, desmarca "Profesional activo" y guarda.`);
+    return;
+  }
+  if (!confirm(`¿Eliminar a "${p.nombre}"? Esta acción no se puede deshacer.`)) return;
+  PROFESIONALES = PROFESIONALES.filter(x => x.id !== id);
+  guardarProfesionales();
+  cerrarModal();
+  renderProfesionales();
+}
+
+function modalNuevoProfesional() {
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">PR</span>
+        <div>
+          <div class="name">Nuevo profesional</div>
+          <div class="meta">Agregar al equipo</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Nombre completo *</label>
+          <input type="text" id="np_nombre" placeholder="Ej: Sol Benchimol">
+        </div>
+        <div class="form-group">
+          <label>Especialidad *</label>
+          <select id="np_especialidad">
+            ${["Psicología","Psicoterapia","Psiquiatría","Terapia Ocupacional","Psicopedagogía","Terapia de Lenguaje","Terapia de Familia","Terapia de Pareja","Eval. Neuropsicológica","Eval. Psicológica","Triaje","Otra"].map(e => `<option>${e}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Honorario por sesión ($) *</label>
+          <input type="number" id="np_honorario" placeholder="Ej: 40" step="0.01" min="0">
+          <small style="color:var(--gris-500);font-size:11px">Tarifa total que cobra por sesión. Se usa como predeterminado al registrar sesiones.</small>
+        </div>
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="text" id="np_telefono" placeholder="0414-1234567">
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="np_email" placeholder="profesional@email.com">
+        </div>
+        <div class="form-group">
+          <label>Frecuencia de pago *</label>
+          <select id="np_frecuencia">
+            <option>Mensual</option>
+            <option>Quincenal</option>
+            <option>Semanal</option>
+            <option>Por sesión</option>
+            <option>Por evaluación</option>
+            <option>A demanda</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Método de pago preferido</label>
+          <select id="np_metodo">
+            <option>Zelle</option>
+            <option>Venmo</option>
+            <option>Bolívares</option>
+            <option>Efectivo</option>
+            <option>Transferencia</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Referencia/Cuenta para pagos</label>
+          <input type="text" id="np_referencia" placeholder="Ej: email Zelle, @venmo, número Mercantil">
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Notas (opcional)</label>
+          <textarea id="np_notas" rows="2"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="crearProfesional()">Crear profesional</button>
+    </div>
+  `);
+}
+
+function crearProfesional() {
+  const nombre = document.getElementById("np_nombre").value.trim();
+  const honorario = parseFloat(document.getElementById("np_honorario").value);
+  if (!nombre) { alert("El nombre es obligatorio"); return; }
+  if (!honorario || honorario <= 0) { alert("El honorario por sesión es obligatorio"); return; }
+
+  const nuevo = {
+    id: nuevoId(PROFESIONALES),
+    nombre,
+    especialidad: document.getElementById("np_especialidad").value,
+    honorario_sesion: honorario,
+    telefono: document.getElementById("np_telefono").value.trim(),
+    email: document.getElementById("np_email").value.trim(),
+    frecuencia_pago: document.getElementById("np_frecuencia").value,
+    metodo_pago_preferido: document.getElementById("np_metodo").value,
+    referencia_pago: document.getElementById("np_referencia").value.trim(),
+    ultimo_pago: new Date().toISOString().slice(0,10),
+    notas: document.getElementById("np_notas").value.trim(),
+    activo: true,
+  };
+  PROFESIONALES.push(nuevo);
+  guardarProfesionales();
+  cerrarModal();
+  renderProfesionales();
+  setTimeout(() => verProfesional(nuevo.id), 100);
+}
+
+// ============================================================
+// CREAR PACIENTE
+// ============================================================
+
+function modalNuevoPaciente() {
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">PA</span>
+        <div>
+          <div class="name">Nuevo paciente</div>
+          <div class="meta">Datos básicos. Tratamientos se agregan después.</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Nombre completo *</label>
+          <input type="text" id="npa_nombre" placeholder="Ej: Sara Cohen">
+        </div>
+        <div class="form-group">
+          <label>Cédula</label>
+          <input type="text" id="npa_cedula" placeholder="V-12345678">
+        </div>
+        <div class="form-group">
+          <label>Teléfono</label>
+          <input type="text" id="npa_telefono" placeholder="0414-1234567">
+        </div>
+        <div class="form-group">
+          <label>Grupo etario *</label>
+          <select id="npa_grupo">
+            <option value="NNA">NNA (Niño/Adolescente)</option>
+            <option value="Adulto">Adulto</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Sexo</label>
+          <select id="npa_sexo">
+            <option>Femenino</option>
+            <option>Masculino</option>
+            <option>Otro</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Edad</label>
+          <input type="number" id="npa_edad" min="0" max="120">
+        </div>
+        <div class="form-group">
+          <label>Colegio</label>
+          <select id="npa_colegio">
+            <option value="">— Ninguno —</option>
+            <option>Moral y Luces</option>
+            <option>Or Jabad</option>
+            <option>Sinai</option>
+            <option>Maor HaTorah</option>
+          </select>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1">
+          <label>Motivo de consulta</label>
+          <textarea id="npa_motivo" rows="2" placeholder="Razón principal por la que viene a Itzjak"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="npa_subsidio" checked>
+            Requiere subsidio
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="npa_referido">
+            Referido por colegio
+          </label>
+        </div>
+        <div class="form-group" style="grid-column: 1 / -1; background:var(--azul-bg); padding:14px; border-radius:10px">
+          <label style="color:var(--azul)">Familia (opcional)</label>
+          <select id="npa_familia">
+            <option value="">— Sin familia (independiente) —</option>
+            ${FAMILIAS.map(f => `<option value="${f.id}">Familia ${f.apellido}${f.telefono ? ' · ' + f.telefono : ''}</option>`).join("")}
+          </select>
+          <small style="color:var(--gris-700);font-size:11px">Asocia este paciente a una familia para ver cobros y datos juntos.</small>
+        </div>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="crearPaciente()">Crear paciente</button>
+    </div>
+  `);
+}
+
+function crearPaciente() {
+  const nombre = document.getElementById("npa_nombre").value.trim();
+  if (!nombre) { alert("El nombre es obligatorio"); return; }
+
+  const familiaId = parseInt(document.getElementById("npa_familia").value) || null;
+
+  const nuevo = {
+    id: nuevoId(PACIENTES),
+    nombre_completo: nombre,
+    cedula: document.getElementById("npa_cedula").value.trim() || `V-${Math.floor(Math.random()*900000+10000000)}`,
+    telefono: document.getElementById("npa_telefono").value.trim(),
+    grupo_etario: document.getElementById("npa_grupo").value,
+    sexo: document.getElementById("npa_sexo").value,
+    edad: parseInt(document.getElementById("npa_edad").value) || null,
+    colegio: document.getElementById("npa_colegio").value || null,
+    motivo_consulta: document.getElementById("npa_motivo").value.trim() || "Pendiente de evaluar",
+    requiere_subsidio: document.getElementById("npa_subsidio").checked,
+    referido_colegio: document.getElementById("npa_referido").checked,
+    ts_canalizado: false,
+    estado: "activo",
+    tratamientos: [],
+    familia_id: familiaId,
+    creado_en: new Date(),
+  };
+
+  // Si se asignó familia y el paciente no tiene teléfono, heredar de la familia
+  if (familiaId && !nuevo.telefono) {
+    const f = FAMILIAS.find(x => x.id === familiaId);
+    if (f && f.telefono) nuevo.telefono = f.telefono;
+  }
+
+  PACIENTES.unshift(nuevo);
+  guardarPacientes();
+  cerrarModal();
+  renderPacientes();
+  setTimeout(() => verPaciente(nuevo.id), 100);
+}
+
+// ============================================================
+// REGISTRAR COBRO PACIENTE
+// ============================================================
+
+function registrarCobroPaciente(pacienteId) {
+  const p = PACIENTES.find(x => x.id === pacienteId);
+  if (!p) return;
+  const sesionesPend = SESIONES.filter(s => s.paciente_id === pacienteId && !s.cobro_paciente_recibido && s.monto_paciente > 0);
+  if (!sesionesPend.length) { alert(`${p.nombre_completo} no tiene sesiones pendientes de pago`); return; }
+  const total = sesionesPend.reduce((s,x) => s + x.monto_paciente, 0);
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">CB</span>
+        <div>
+          <div class="name">Registrar cobro</div>
+          <div class="meta">de ${p.nombre_completo}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div class="alert-card info" style="margin-bottom:16px">
+        Para cada sesión, indica qué pasó:
+        <ul style="margin:8px 0 0 20px;font-size:13px;font-weight:normal">
+          <li><strong>Pagó al profesional</strong> — el paciente sí pagó su parte directamente</li>
+          <li><strong>Itzjak cubre</strong> — Itzjak asume el pago de esta parte (se suma a honorarios pendientes del profesional)</li>
+          <li><strong>Pendiente</strong> — déjala así, todavía no se ha resuelto</li>
+        </ul>
+      </div>
+
+      <div style="background:var(--gris-50);border-radius:10px;padding:12px;max-height:340px;overflow-y:auto">
+        ${sesionesPend.map(s => `
+          <div style="background:white;padding:14px;border-radius:10px;margin-bottom:10px;border:1px solid var(--gris-200)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+              <div>
+                <strong>${ui.formatDate(s.fecha)}</strong> — ${s.profesional_nombre}<br>
+                <small style="color:var(--gris-500)">Hace ${diasDesde(s.fecha)} días</small>
+              </div>
+              <div style="font-weight:700;color:var(--naranja);font-size:16px">${ui.formatMoney(s.monto_paciente)}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn-success btn-sm" onclick="resolverCobro(${s.id}, 'pagado', ${pacienteId})">✓ Pagó al profesional</button>
+              <button class="btn-amarillo btn-sm" onclick="resolverCobro(${s.id}, 'itzjak', ${pacienteId})">Itzjak cubre</button>
+              <button class="btn-secondary btn-sm" onclick="resolverCobro(${s.id}, 'cancelar', ${pacienteId})" style="color:var(--rojo);border-color:var(--rojo)">Anular sesión</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+    </div>
+  `);
+}
+
+function resolverCobro(sesionId, accion, pacienteId) {
+  const s = SESIONES.find(x => x.id === sesionId);
+  if (!s) return;
+
+  if (accion === 'pagado') {
+    s.cobro_paciente_recibido = true;
+  } else if (accion === 'itzjak') {
+    // Itzjak adelanta el pago: el monto del paciente se suma al de Itzjak
+    s.monto_itzjak = s.monto_itzjak + s.monto_paciente;
+    s.monto_paciente = 0;
+    s.cobro_paciente_recibido = true; // ya no debe nada al profesional, Itzjak asumió
+    s.estado_pago_itzjak = "pendiente"; // Itzjak ahora debe el total al profesional
+    s.itzjak_cubrio_paciente = true; // marca para auditoría
+  } else if (accion === 'cancelar') {
+    if (!confirm(`¿Anular esta sesión del ${ui.formatDate(s.fecha)}? Se eliminará del registro.`)) return;
+    SESIONES = SESIONES.filter(x => x.id !== sesionId);
+  }
+  guardarSesiones();
+  cerrarModal();
+  // Reabrir si todavía hay sesiones pendientes
+  const aunPendientes = SESIONES.filter(x => x.paciente_id === pacienteId && !x.cobro_paciente_recibido && x.monto_paciente > 0);
+  if (aunPendientes.length > 0) {
+    setTimeout(() => registrarCobroPaciente(pacienteId), 100);
+  } else {
+    // Refrescar la vista actual
+    const activeView = document.querySelector(".nav-item.active")?.dataset.view;
+    if (activeView) cambiarVista(activeView);
+  }
+}
+
+// ============================================================
+// SESIONES
+// ============================================================
+
+function renderSesiones() {
+  document.getElementById("view-sesiones").innerHTML = `
+    <div class="header-row">
+      <h1>Registrar sesión</h1>
+    </div>
+    <p class="muted" style="margin-bottom:20px">Registra una sesión que ya ocurrió.</p>
+    <div class="form-card-pro" style="max-width:700px">
+      <div class="form-group">
+        <label>Profesional *</label>
+        <select id="sesProf">
+          <option value="">— Selecciona un profesional —</option>
+          ${PROFESIONALES.filter(p => p.activo !== false).map(p =>
+            `<option value="${p.id}">${p.nombre} — ${p.especialidad} (${ui.formatMoney(p.honorario_sesion)}/sesión)</option>`
+          ).join("")}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Paciente *</label>
+        <select id="sesPac">
+          <option value="">— Selecciona un paciente —</option>
+          ${PACIENTES.map(p => `<option value="${p.id}">${p.nombre_completo}</option>`).join("")}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Tratamiento / Tipo de servicio *</label>
+        <select id="sesTrat">
+          <option value="">— Tipo de sesión —</option>
+          ${["Psicología","Psicoterapia","Psiquiatría","Terapia Ocupacional","Psicopedagogía","Terapia de Lenguaje","Terapia de Familia","Terapia de Pareja","Eval. Neuropsicológica","Eval. Psicológica","Triaje","Otro"].map(e => `<option>${e}</option>`).join("")}
+        </select>
+        <small style="color:var(--gris-500);font-size:11px">Se autollena con la especialidad del profesional, pero puedes cambiarlo.</small>
+      </div>
+      <div class="form-group">
+        <label>Fecha *</label>
+        <input type="date" id="sesFecha">
+      </div>
+
+      <div style="background:var(--azul-bg);padding:18px;border-radius:12px;margin:20px 0;border-left:4px solid var(--azul)">
+        <h3 style="color:var(--azul);font-size:14px;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px">Honorarios y pago</h3>
+
+        <div class="form-group">
+          <label>Honorario total de la sesión ($) *</label>
+          <input type="number" id="sesHonorario" step="0.01" min="0" placeholder="Ej: 50">
+          <small style="color:var(--gris-700);font-size:11px">Se autollena con el honorario del profesional. Puedes ajustarlo si es diferente.</small>
+        </div>
+
+        <div class="form-group">
+          <label>¿Cuánto paga el paciente al profesional? ($) *</label>
+          <input type="number" id="sesPagoPac" step="0.01" min="0" placeholder="Ej: 20">
+          <small style="color:var(--gris-700);font-size:11px">Lo que el paciente le paga directamente al profesional.</small>
+        </div>
+
+        <div class="form-group" style="margin-bottom:0">
+          <label>Itzjak cubre ($)</label>
+          <input type="text" id="sesPagoItz" readonly style="background:white;font-weight:700;color:var(--rojo);font-size:16px">
+          <small style="color:var(--gris-700);font-size:11px">Se calcula automáticamente: Honorario - lo que paga el paciente.</small>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="checkbox-label"><input type="checkbox" id="sesAsistio" checked> Paciente asistió</label>
+      </div>
+      <div class="form-group">
+        <label class="checkbox-label"><input type="checkbox" id="sesPagoRecibido" checked> Paciente ya pagó su parte al profesional</label>
+      </div>
+      <div class="form-group">
+        <label>Notas (opcional)</label>
+        <textarea id="sesNotas" rows="3" placeholder="Observaciones de la sesión..."></textarea>
+      </div>
+      <button class="btn-primary" onclick="guardarNuevaSesion()">Guardar sesión</button>
+      <div id="sesMsg" style="margin-top:12px"></div>
+    </div>
+  `;
+
+  setTimeout(() => {
+    const f = document.getElementById("sesFecha");
+    if (f) f.valueAsDate = new Date();
+
+    // Al elegir profesional, autollenar honorario y especialidad/tratamiento
+    document.getElementById("sesProf").addEventListener("change", e => {
+      const profId = parseInt(e.target.value);
+      if (!profId) return;
+      const prof = PROFESIONALES.find(p => p.id === profId);
+      if (!prof) return;
+
+      // Autollenar honorario
+      document.getElementById("sesHonorario").value = prof.honorario_sesion;
+
+      // Autollenar especialidad/tratamiento
+      const selTrat = document.getElementById("sesTrat");
+      const opt = Array.from(selTrat.options).find(o => o.value === prof.especialidad);
+      if (opt) selTrat.value = prof.especialidad;
+
+      // Recalcular cobertura Itzjak
+      calcularCoberturaItzjak();
+    });
+
+    // Al elegir paciente, intentar autollenar lo que paga (si tiene tratamiento previo con ese prof)
+    document.getElementById("sesPac").addEventListener("change", e => {
+      const pacId = parseInt(e.target.value);
+      const profId = parseInt(document.getElementById("sesProf").value);
+      if (!pacId || !profId) return;
+      const pac = PACIENTES.find(p => p.id === pacId);
+      const trat = pac?.tratamientos.find(t => t.profesional_id === profId);
+      if (trat) {
+        document.getElementById("sesHonorario").value = trat.tarifa_total;
+        document.getElementById("sesPagoPac").value = trat.monto_paciente;
+        calcularCoberturaItzjak();
+      }
+    });
+
+    // Recalcular cobertura cuando cambian honorario o pago paciente
+    document.getElementById("sesHonorario").addEventListener("input", calcularCoberturaItzjak);
+    document.getElementById("sesPagoPac").addEventListener("input", calcularCoberturaItzjak);
+  }, 0);
+}
+
+function calcularCoberturaItzjak() {
+  const honorario = parseFloat(document.getElementById("sesHonorario").value) || 0;
+  const pacPaga = parseFloat(document.getElementById("sesPagoPac").value) || 0;
+  const itzjakCubre = honorario - pacPaga;
+  document.getElementById("sesPagoItz").value = ui.formatMoney(itzjakCubre);
+
+  // Cambiar color si es negativo (paciente paga más que el honorario)
+  const inp = document.getElementById("sesPagoItz");
+  if (itzjakCubre < 0) {
+    inp.style.color = "var(--rojo)";
+  } else if (itzjakCubre === 0) {
+    inp.style.color = "var(--verde)";
+  } else {
+    inp.style.color = "var(--rojo)";
+  }
+}
+
+function guardarNuevaSesion() {
+  const profId = parseInt(document.getElementById("sesProf").value);
+  const pacId = parseInt(document.getElementById("sesPac").value);
+  const tratamiento = document.getElementById("sesTrat").value;
+  const fecha = document.getElementById("sesFecha").value;
+  const honorario = parseFloat(document.getElementById("sesHonorario").value);
+  const pagoPaciente = parseFloat(document.getElementById("sesPagoPac").value);
+  const asistio = document.getElementById("sesAsistio").checked;
+  const pagoRecibido = document.getElementById("sesPagoRecibido").checked;
+  const notas = document.getElementById("sesNotas").value.trim();
+  const msg = document.getElementById("sesMsg");
+
+  if (!profId) { msg.innerHTML = '<span style="color:red">Selecciona el profesional</span>'; return; }
+  if (!pacId) { msg.innerHTML = '<span style="color:red">Selecciona el paciente</span>'; return; }
+  if (!tratamiento) { msg.innerHTML = '<span style="color:red">Selecciona el tipo de tratamiento</span>'; return; }
+  if (!fecha) { msg.innerHTML = '<span style="color:red">Pon la fecha</span>'; return; }
+  if (isNaN(honorario) || honorario < 0) { msg.innerHTML = '<span style="color:red">Honorario inválido</span>'; return; }
+  if (isNaN(pagoPaciente) || pagoPaciente < 0) { msg.innerHTML = '<span style="color:red">Lo que paga el paciente es inválido</span>'; return; }
+  if (pagoPaciente > honorario) { msg.innerHTML = '<span style="color:red">El paciente no puede pagar más que el honorario total</span>'; return; }
+
+  const prof = PROFESIONALES.find(p => p.id === profId);
+  const pac = PACIENTES.find(p => p.id === pacId);
+  const itzjakCubre = honorario - pagoPaciente;
+
+  // Si el paciente no tiene tratamiento con este profesional, crearlo automáticamente
+  let trat = pac.tratamientos.find(t => t.profesional_id === profId && t.especialidad === tratamiento);
+  if (!trat) {
+    trat = {
+      id: `t-${pacId}-${Date.now()}`,
+      profesional_id: profId,
+      profesional_nombre: prof.nombre,
+      especialidad: tratamiento,
+      tarifa_total: honorario,
+      monto_paciente: pagoPaciente,
+      monto_itzjak: itzjakCubre,
+      sesiones_planificadas_mes: 4,
+    };
+    pac.tratamientos.push(trat);
+    guardarPacientes();
+  } else {
+    // Actualizar montos del tratamiento si cambiaron
+    trat.tarifa_total = honorario;
+    trat.monto_paciente = pagoPaciente;
+    trat.monto_itzjak = itzjakCubre;
+    guardarPacientes();
+  }
+
+  const nuevaSesion = {
+    id: nuevoId(SESIONES),
+    fecha: new Date(fecha + 'T12:00:00'),
+    paciente_id: pac.id,
+    paciente_nombre: pac.nombre_completo,
+    tratamiento_id: trat.id,
+    profesional_id: prof.id,
+    profesional_nombre: prof.nombre,
+    tipo_servicio: tratamiento,
+    tarifa_total: honorario,
+    monto_paciente: pagoPaciente,
+    monto_itzjak: itzjakCubre,
+    asistio,
+    estado_pago_itzjak: itzjakCubre > 0 ? "pendiente" : "no_aplica",
+    fecha_pago: null,
+    metodo_pago: null,
+    cobro_paciente_recibido: pagoPaciente === 0 ? true : pagoRecibido,
+    notas,
+  };
+  SESIONES.push(nuevaSesion);
+  guardarSesiones();
+
+  msg.innerHTML = `<span style="color:var(--verde)">✓ Sesión guardada. ${itzjakCubre > 0 ? `Itzjak debe ${ui.formatMoney(itzjakCubre)} a ${prof.nombre}.` : ''}</span>`;
+
+  // Limpiar formulario
+  document.getElementById("sesNotas").value = "";
+  document.getElementById("sesPac").value = "";
+  document.getElementById("sesProf").value = "";
+  document.getElementById("sesTrat").value = "";
+  document.getElementById("sesHonorario").value = "";
+  document.getElementById("sesPagoPac").value = "";
+  document.getElementById("sesPagoItz").value = "";
+
+  setTimeout(() => msg.innerHTML = '', 5000);
+}
+
+// ============================================================
+// HONORARIOS
+// ============================================================
+
+function renderHonorarios() {
+  const pendientesPorProf = {};
+  for (const s of SESIONES.filter(s => s.estado_pago_itzjak === "pendiente" && s.monto_itzjak > 0)) {
+    if (!pendientesPorProf[s.profesional_id]) {
+      const prof = PROFESIONALES.find(p => p.id === s.profesional_id);
+      pendientesPorProf[s.profesional_id] = { profesional: prof, sesiones: [], total: 0 };
+    }
+    pendientesPorProf[s.profesional_id].sesiones.push(s);
+    pendientesPorProf[s.profesional_id].total += s.monto_itzjak;
+  }
+  const lista = Object.values(pendientesPorProf).sort((a,b) => b.total - a.total);
+  const total = lista.reduce((sum, l) => sum + l.total, 0);
+
+  document.getElementById("view-honorarios").innerHTML = `
+    <div class="header-row">
+      <h1>Honorarios pendientes</h1>
+    </div>
+    <p class="muted" style="margin-bottom:20px">Itzjak debe pagar a los profesionales por sesiones realizadas.</p>
+
+    <div class="alert-card">
+      <strong>Total pendiente: ${ui.formatMoney(total)}</strong> · ${lista.length} profesionales esperando pago
+    </div>
+
+    ${lista.map(item => `
+      <div class="honorario-row">
+        <div class="info">
+          <div class="avatar">${ui.initials(item.profesional.nombre)}</div>
+          <div class="name-block">
+            <div class="name">${item.profesional.nombre}</div>
+            <div class="esp">${item.profesional.especialidad}</div>
+            <div class="meta">${item.sesiones.length} sesiones · ${item.profesional.frecuencia_pago} · Último pago hace ${diasDesde(item.profesional.ultimo_pago)}d</div>
+          </div>
+        </div>
+        <div class="amount">
+          <div class="num">${ui.formatMoney(item.total)}</div>
+          <div class="lbl">a pagar</div>
+        </div>
+        <div class="actions">
+          <button class="btn-secondary" onclick="verDetalleHonorario(${item.profesional.id})">Detalle</button>
+          <button class="btn-amarillo" onclick="liquidarHonorario(${item.profesional.id})">Liquidar</button>
+        </div>
+      </div>
+    `).join("") || '<div class="empty-state">No hay pagos pendientes</div>'}
+  `;
+}
+
+function verDetalleHonorario(profId) {
+  const prof = PROFESIONALES.find(p => p.id === profId);
+  const sp = SESIONES.filter(s => s.profesional_id === profId && s.estado_pago_itzjak === "pendiente" && s.monto_itzjak > 0);
+  const total = sp.reduce((sum, s) => sum + s.monto_itzjak, 0);
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">PR</span>
+        <div>
+          <div class="name">${prof.nombre}</div>
+          <div class="meta">${prof.especialidad} · ${sp.length} sesiones pendientes</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+
+    <div style="padding: 24px 28px">
+      <h3>Sesiones a liquidar</h3>
+      <div style="margin-top:12px">
+        ${sp.map(s => `
+          <div class="session-row">
+            <div>
+              <strong>${ui.formatDate(s.fecha)}</strong> — ${s.paciente_nombre}<br>
+              <small style="color:var(--gris-500)">Tarifa total ${ui.formatMoney(s.tarifa_total)} · Paciente pagó ${ui.formatMoney(s.monto_paciente)}</small>
+            </div>
+            <div style="font-weight:700;color:var(--rojo)">${ui.formatMoney(s.monto_itzjak)}</div>
+          </div>
+        `).join("")}
+      </div>
+      <div style="background:var(--gris-50);padding:16px;border-radius:10px;text-align:right;margin-top:16px;border-left:4px solid var(--rojo)">
+        <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">Total pendiente</div>
+        <div style="font-size:24px;font-weight:700;color:var(--rojo);margin-top:4px">${ui.formatMoney(total)}</div>
+      </div>
+    </div>
+
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+      <button class="btn-amarillo" onclick="liquidarHonorario(${profId})">Liquidar pago</button>
+    </div>
+  `);
+}
+
+function liquidarHonorario(profId) {
+  const prof = PROFESIONALES.find(p => p.id === profId);
+  const sp = SESIONES.filter(s => s.profesional_id === profId && s.estado_pago_itzjak === "pendiente" && s.monto_itzjak > 0);
+  const total = sp.reduce((sum, s) => sum + s.monto_itzjak, 0);
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">PR</span>
+        <div>
+          <div class="name">Liquidar pago</div>
+          <div class="meta">a ${prof.nombre}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+
+    <div style="padding: 20px 28px">
+      <div class="form-group">
+        <label>Sesiones a incluir</label>
+        <div style="background:var(--gris-50);border-radius:10px;padding:12px;max-height:200px;overflow-y:auto">
+          ${sp.map(s => `
+            <div class="session-row">
+              <label>
+                <input type="checkbox" checked data-monto="${s.monto_itzjak}" data-id="${s.id}" class="liq-check">
+                ${ui.formatDate(s.fecha)} — ${s.paciente_nombre}
+              </label>
+              <span style="color:var(--rojo);font-weight:700">${ui.formatMoney(s.monto_itzjak)}</span>
+            </div>
+          `).join("")}
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Total a pagar</label>
+        <input type="text" id="liqTotal" value="${ui.formatMoney(total)}" readonly style="font-size:18px;font-weight:700;color:var(--rojo)">
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Fecha del pago</label>
+          <input type="date" id="liqFecha">
+        </div>
+        <div class="form-group">
+          <label>Método</label>
+          <select id="liqMetodo">
+            <option value="Zelle" ${prof.metodo_pago_preferido === 'Zelle' ? 'selected' : ''}>Zelle</option>
+            <option value="Venmo" ${prof.metodo_pago_preferido === 'Venmo' ? 'selected' : ''}>Venmo</option>
+            <option value="Bolívares" ${prof.metodo_pago_preferido === 'Bolívares' ? 'selected' : ''}>Bolívares (Mercantil)</option>
+            <option value="Efectivo" ${prof.metodo_pago_preferido === 'Efectivo' ? 'selected' : ''}>Efectivo</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Referencia / Comprobante</label>
+        <input type="text" id="liqRef" placeholder="Ej: Z-4567 o nombre de quien recibió">
+      </div>
+
+      <div class="form-group">
+        <label>Notas (opcional)</label>
+        <textarea id="liqNotas" rows="2"></textarea>
+      </div>
+    </div>
+
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="confirmarLiquidacion(${profId})">Confirmar pago</button>
+    </div>
+  `);
+
+  setTimeout(() => {
+    const f = document.getElementById("liqFecha");
+    if (f) f.valueAsDate = new Date();
+
+    document.querySelectorAll(".liq-check").forEach(c => {
+      c.addEventListener("change", () => {
+        const sum = Array.from(document.querySelectorAll(".liq-check"))
+          .filter(x => x.checked)
+          .reduce((s, x) => s + parseFloat(x.dataset.monto), 0);
+        document.getElementById("liqTotal").value = ui.formatMoney(sum);
+      });
+    });
+  }, 0);
+}
+
+function confirmarLiquidacion(profId) {
+  const prof = PROFESIONALES.find(p => p.id === profId);
+  const fecha = document.getElementById("liqFecha").value;
+  const metodo = document.getElementById("liqMetodo").value;
+  const referencia = document.getElementById("liqRef").value.trim();
+  const notas = document.getElementById("liqNotas").value.trim();
+
+  if (!fecha) { alert("Debes poner la fecha del pago"); return; }
+
+  const idsAPagar = Array.from(document.querySelectorAll(".liq-check"))
+    .filter(x => x.checked)
+    .map(x => parseInt(x.dataset.id));
+
+  if (idsAPagar.length === 0) { alert("Selecciona al menos una sesión"); return; }
+
+  const fechaPago = new Date(fecha + 'T12:00:00');
+  let total = 0;
+
+  SESIONES.forEach(s => {
+    if (idsAPagar.includes(s.id)) {
+      s.estado_pago_itzjak = "pagado";
+      s.fecha_pago = fechaPago;
+      s.metodo_pago = metodo;
+      s.referencia_pago = referencia;
+      s.notas_pago = notas;
+      total += s.monto_itzjak;
+    }
+  });
+
+  // Actualizar último pago del profesional
+  prof.ultimo_pago = fecha;
+
+  guardarSesiones();
+  guardarProfesionales();
+
+  cerrarModal();
+  alert(`✓ Pago confirmado: ${ui.formatMoney(total)} a ${prof.nombre} (${idsAPagar.length} sesiones)`);
+  renderHonorarios();
+}
+
+// ============================================================
+// HISTORIAL DE PAGOS
+// ============================================================
+
+function renderHistorialPagos() {
+  const pagos = pagosRealizados();
+  const total = pagos.reduce((s, p) => s + p.monto, 0);
+
+  document.getElementById("view-historial-pagos").innerHTML = `
+    <div class="header-row">
+      <h1>Historial de pagos</h1>
+    </div>
+    <p class="muted" style="margin-bottom:20px">Pagos realizados por Itzjak a profesionales.</p>
+
+    <div class="kpi-grid" style="margin-bottom:20px">
+      <div class="kpi-card red">
+        <div class="kpi-header">
+          <div class="kpi-label">Total pagado (histórico)</div>
+        </div>
+        <div class="kpi-value red">${ui.formatMoney(total)}</div>
+        <div class="kpi-foot">${pagos.length} pagos realizados</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead><tr><th>Fecha</th><th>Profesional</th><th>Sesiones</th><th>Método</th><th>Monto</th></tr></thead>
+        <tbody>
+          ${pagos.map(p => `
+            <tr class="clickable" onclick='verDetallePago("${p.profesional_id}_${p.fecha_pago.toISOString()}")'>
+              <td>${ui.formatDate(p.fecha_pago)}</td>
+              <td>
+                <div class="id-cell">
+                  <span class="code-tag">PR</span>
+                  <strong>${p.profesional_nombre}</strong>
+                </div>
+              </td>
+              <td>${p.sesiones.length}</td>
+              <td>${ui.badgeMetodo(p.metodo)}</td>
+              <td class="right" style="font-weight:700">${ui.formatMoney(p.monto)}</td>
+            </tr>
+          `).join("") || '<tr><td colspan="5" class="empty-state">No hay pagos registrados</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function verDetallePago(key) {
+  const pago = pagosRealizados().find(p => `${p.profesional_id}_${p.fecha_pago.toISOString()}` === key);
+  if (!pago) return;
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">HP</span>
+        <div>
+          <div class="name">Pago a ${pago.profesional_nombre}</div>
+          <div class="meta">${ui.formatDate(pago.fecha_pago)} · ${pago.metodo}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding: 20px 28px">
+      <h3>Sesiones cubiertas</h3>
+      <div style="margin-top:12px">
+        ${pago.sesiones.map(s => `
+          <div class="session-row">
+            <div>${ui.formatDate(s.fecha)} — ${s.paciente_nombre}</div>
+            <div style="font-weight:700">${ui.formatMoney(s.monto_itzjak)}</div>
+          </div>
+        `).join("")}
+      </div>
+      <div style="background:var(--gris-50);padding:16px;border-radius:10px;text-align:right;margin-top:12px">
+        <strong style="font-size:18px">Total: ${ui.formatMoney(pago.monto)}</strong>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+    </div>
+  `);
+}
+
+// ============================================================
+// COBROS
+// ============================================================
+
+function renderCobros() {
+  const pendientes = SESIONES.filter(s => !s.cobro_paciente_recibido && s.monto_paciente > 0);
+  const porPac = {};
+  for (const s of pendientes) {
+    if (!porPac[s.paciente_id]) porPac[s.paciente_id] = { paciente_id: s.paciente_id, paciente_nombre: s.paciente_nombre, sesiones: [], total: 0 };
+    porPac[s.paciente_id].sesiones.push(s);
+    porPac[s.paciente_id].total += s.monto_paciente;
+  }
+  const lista = Object.values(porPac).sort((a,b) => b.total - a.total);
+  const total = lista.reduce((s, x) => s + x.total, 0);
+
+  document.getElementById("view-cobros").innerHTML = `
+    <div class="header-row">
+      <h1>Cobros a pacientes</h1>
+    </div>
+    <p class="muted" style="margin-bottom:20px">El paciente paga su parte directamente al profesional. Estos aún no han pagado.</p>
+
+    <div class="alert-card warn">
+      <strong>${ui.formatMoney(total)}</strong> pendiente de cobrar a <strong>${lista.length} pacientes</strong>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead><tr><th>Paciente</th><th>Sesiones sin pagar</th><th>Monto</th><th></th></tr></thead>
+        <tbody>
+          ${lista.map(p => `
+            <tr class="clickable" onclick="verPaciente(${p.paciente_id})">
+              <td>
+                <div class="id-cell">
+                  <span class="code-tag">PA</span>
+                  <strong>${p.paciente_nombre}</strong>
+                </div>
+              </td>
+              <td>${p.sesiones.length}</td>
+              <td class="right" style="font-weight:700;color:var(--naranja)">${ui.formatMoney(p.total)}</td>
+              <td><button class="btn-secondary btn-sm" onclick="event.stopPropagation();registrarCobroPaciente(${p.paciente_id})">Registrar pago</button></td>
+            </tr>
+          `).join("") || '<tr><td colspan="4" class="empty-state">Todo al día</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ============================================================
+// DONACIONES
+// ============================================================
+
+function renderDonaciones() {
+  const total = DONACIONES.reduce((s, d) => s + d.monto, 0);
+  const hoy = new Date();
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const totalMes = DONACIONES.filter(d => d.fecha >= inicioMes).reduce((s, d) => s + d.monto, 0);
+
+  document.getElementById("view-donaciones").innerHTML = `
+    <div class="header-row">
+      <h1>Donaciones</h1>
+      <button class="btn-primary" onclick="modalNuevaDonacion()">+ Registrar donación</button>
+    </div>
+    <p class="muted" style="margin-bottom:20px">Control de donaciones recibidas para sostener el programa.</p>
+
+    <div class="kpi-grid" style="margin-bottom:20px">
+      <div class="kpi-card green">
+        <div class="kpi-header">
+          <div class="kpi-label">Donaciones del mes</div>
+        </div>
+        <div class="kpi-value green">${ui.formatMoney(totalMes)}</div>
+        <div class="kpi-foot">${DONACIONES.filter(d => d.fecha >= inicioMes).length} donantes</div>
+      </div>
+      <div class="kpi-card green">
+        <div class="kpi-header">
+          <div class="kpi-label">Total recibido</div>
+        </div>
+        <div class="kpi-value green">${ui.formatMoney(total)}</div>
+        <div class="kpi-foot">${DONACIONES.length} donaciones</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead><tr><th>Fecha</th><th>Donante</th><th>Método</th><th>Referencia</th><th>Notas</th><th>Monto</th></tr></thead>
+        <tbody>
+          ${DONACIONES.sort((a,b) => b.fecha - a.fecha).map(d => `
+            <tr>
+              <td>${ui.formatDate(d.fecha)}</td>
+              <td>
+                <div class="id-cell">
+                  <span class="code-tag">DN</span>
+                  <strong>${d.donante}</strong>
+                </div>
+              </td>
+              <td>${ui.badgeMetodo(d.metodo)}</td>
+              <td>${d.referencia || '—'}</td>
+              <td><small style="color:var(--gris-500)">${d.notas || '—'}</small></td>
+              <td class="right" style="font-weight:700;color:var(--verde)">${ui.formatMoney(d.monto)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function modalNuevaDonacion() {
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">DN</span>
+        <div>
+          <div class="name">Nueva donación</div>
+          <div class="meta">Registrar entrada de fondos</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div class="form-group">
+        <label>Donante *</label>
+        <input type="text" id="don_donante" placeholder="Ej: Familia Cohen / Anónimo">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Fecha *</label>
+          <input type="date" id="donFecha">
+        </div>
+        <div class="form-group">
+          <label>Monto ($) *</label>
+          <input type="number" id="don_monto" placeholder="0" step="0.01">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Método *</label>
+        <select id="don_metodo">
+          <option>Zelle</option>
+          <option>Venmo</option>
+          <option>Bolívares</option>
+          <option>Efectivo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Referencia</label>
+        <input type="text" id="don_ref" placeholder="Ej: Z-4567">
+      </div>
+      <div class="form-group">
+        <label>Notas (opcional)</label>
+        <textarea id="don_notas" rows="2"></textarea>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="guardarNuevaDonacion()">Guardar donación</button>
+    </div>
+  `);
+  setTimeout(() => { const f = document.getElementById("donFecha"); if (f) f.valueAsDate = new Date(); }, 0);
+}
+
+function guardarNuevaDonacion() {
+  const donante = document.getElementById("don_donante").value.trim();
+  const fecha = document.getElementById("donFecha").value;
+  const monto = parseFloat(document.getElementById("don_monto").value);
+
+  if (!donante || !fecha || !monto || monto <= 0) {
+    alert("Completa donante, fecha y monto válido");
+    return;
+  }
+
+  DONACIONES.push({
+    id: nuevoId(DONACIONES),
+    fecha: new Date(fecha + 'T12:00:00'),
+    donante,
+    monto,
+    metodo: document.getElementById("don_metodo").value,
+    referencia: document.getElementById("don_ref").value.trim(),
+    notas: document.getElementById("don_notas").value.trim(),
+  });
+  guardarDonaciones();
+  cerrarModal();
+  renderDonaciones();
+}
+
+// ============================================================
+// CIERRE
+// ============================================================
+
+function renderCierre() {
+  const hoy = new Date();
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const inicioMesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+
+  const sesMA = SESIONES.filter(s => s.fecha >= inicioMesAnt && s.fecha <= finMesAnt);
+  const pagadoMA = sesMA.filter(s => s.estado_pago_itzjak === "pagado").reduce((s,x) => s + x.monto_itzjak, 0);
+  const pendMA = sesMA.filter(s => s.estado_pago_itzjak === "pendiente").reduce((s,x) => s + x.monto_itzjak, 0);
+  const cobMA = sesMA.filter(s => s.cobro_paciente_recibido).reduce((s,x) => s + x.monto_paciente, 0);
+  const donMA = DONACIONES.filter(d => d.fecha >= inicioMesAnt && d.fecha <= finMesAnt).reduce((s,d) => s + d.monto, 0);
+  const balance = donMA - pagadoMA - pendMA;
+
+  const sesMC = SESIONES.filter(s => s.fecha >= inicioMes);
+  const pagadoMC = sesMC.filter(s => s.estado_pago_itzjak === "pagado").reduce((s,x) => s + x.monto_itzjak, 0);
+  const pendMC = sesMC.filter(s => s.estado_pago_itzjak === "pendiente").reduce((s,x) => s + x.monto_itzjak, 0);
+  const donMC = DONACIONES.filter(d => d.fecha >= inicioMes).reduce((s,d) => s + d.monto, 0);
+
+  document.getElementById("view-cierre").innerHTML = `
+    <div class="header-row">
+      <h1>Cierre de mes</h1>
+      <button class="btn-primary" onclick="window.print()">Imprimir resumen</button>
+    </div>
+    <p class="muted" style="margin-bottom:20px">Resumen financiero por mes: entradas, salidas y balance.</p>
+
+    <h2 style="margin-top:8px">Mes en curso — ${ui.formatMesAnio(hoy)}</h2>
+    <div class="kpi-grid" style="margin-bottom:32px">
+      <div class="kpi-card green">
+        <div class="kpi-header"><div class="kpi-label">Donaciones</div></div>
+        <div class="kpi-value green">${ui.formatMoney(donMC)}</div>
+      </div>
+      <div class="kpi-card red">
+        <div class="kpi-header"><div class="kpi-label">Pagado a profesionales</div></div>
+        <div class="kpi-value red">${ui.formatMoney(pagadoMC)}</div>
+      </div>
+      <div class="kpi-card orange">
+        <div class="kpi-header"><div class="kpi-label">Pendiente</div></div>
+        <div class="kpi-value orange">${ui.formatMoney(pendMC)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-header"><div class="kpi-label">Sesiones</div></div>
+        <div class="kpi-value">${sesMC.length}</div>
+      </div>
+    </div>
+
+    <h2>Mes pasado — ${ui.formatMesAnio(inicioMesAnt)} (cerrado)</h2>
+    <div class="kpi-grid">
+      <div class="kpi-card green">
+        <div class="kpi-header"><div class="kpi-label">Donaciones</div></div>
+        <div class="kpi-value green">${ui.formatMoney(donMA)}</div>
+      </div>
+      <div class="kpi-card red">
+        <div class="kpi-header"><div class="kpi-label">Pagado a profesionales</div></div>
+        <div class="kpi-value red">${ui.formatMoney(pagadoMA + pendMA)}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-header"><div class="kpi-label">Cobrado a pacientes</div></div>
+        <div class="kpi-value">${ui.formatMoney(cobMA)}</div>
+        <div class="kpi-foot">paga directo al profesional</div>
+      </div>
+      <div class="kpi-card ${balance >= 0 ? 'green' : 'red'}">
+        <div class="kpi-header"><div class="kpi-label">Balance</div></div>
+        <div class="kpi-value ${balance >= 0 ? 'green' : 'red'}">${ui.formatMoney(balance)}</div>
+        <div class="kpi-foot">donaciones - honorarios</div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// REPORTE DONANTE
+// ============================================================
+
+function renderReporteDonante() {
+  const k = {
+    activos: PACIENTES.length,
+    sesiones: 3127,
+    referidos: 102,
+    ingresados: PACIENTES.filter(p => p.referido_colegio).length,
+    pct_subsidio: Math.round(100 * PACIENTES.filter(p => p.requiere_subsidio).length / PACIENTES.length),
+    presupuesto: 7000,
+  };
+  const fecha = ui.formatMesAnio(new Date());
+
+  document.getElementById("view-reporte-donante").innerHTML = `
+    <div class="header-row">
+      <h1>Reporte donantes</h1>
+      <button class="btn-primary" onclick="window.print()">Imprimir / Guardar PDF</button>
+    </div>
+    <p class="muted" style="margin-bottom:20px">Reporte mensual con los KPIs del programa.</p>
+
+    <div class="reporte">
+      <h2>Reporte ${fecha}</h2>
+      <div class="stat-row">
+        <div class="stat-num">+${k.activos}</div>
+        <div class="stat-text"><strong>Usuarios atendidos</strong><br>
+          ${k.activos} personas reciben atención actualmente dentro del programa.</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-num">${k.sesiones.toLocaleString()}</div>
+        <div class="stat-text"><strong>Sesiones terapéuticas</strong><br>
+          Sesiones brindadas hasta la fecha, asegurando un acompañamiento integral.</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-num">${k.referidos}</div>
+        <div class="stat-text"><strong>Referidos escolares</strong><br>
+          NNA identificados por colegios comunitarios. ${k.ingresados} ingresados.</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-num">$${(k.presupuesto/1000).toFixed(0)}k</div>
+        <div class="stat-text"><strong>Presupuesto mensual</strong><br>
+          Para subsidiar terapias y sostener honorarios profesionales.</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-num">${k.pct_subsidio}%</div>
+        <div class="stat-text"><strong>Subsidio</strong><br>
+          de los usuarios no pueden afrontar el precio subsidiado.</div>
+      </div>
+      <div class="lema">"Sanando mentes, creando sonrisas"</div>
+    </div>
+  `;
+}
+
+renderDashboard();
+</script>
+</body>
+</html>
