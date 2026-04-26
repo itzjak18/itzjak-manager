@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Itzjak — Sistema de Gestión</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -629,6 +630,12 @@ tr.clickable:hover { background: var(--gris-50); }
       </a>
 
       <div class="sidebar-section">Finanzas</div>
+      <a class="nav-item" data-view="cuentas">
+        <span class="code">CT</span> Cuentas
+      </a>
+      <a class="nav-item" data-view="pagos">
+        <span class="code">PG</span> Pagos / Gastos
+      </a>
       <a class="nav-item" data-view="honorarios">
         <span class="code">HN</span> Honorarios
       </a>
@@ -648,6 +655,11 @@ tr.clickable:hover { background: var(--gris-50); }
       <div class="sidebar-section">Reportes</div>
       <a class="nav-item" data-view="reporte-donante">
         <span class="code">RD</span> Reporte donantes
+      </a>
+
+      <div class="sidebar-section">Sistema</div>
+      <a class="nav-item" data-view="configuracion">
+        <span class="code">CF</span> Configuración
       </a>
     </nav>
 
@@ -672,12 +684,15 @@ tr.clickable:hover { background: var(--gris-50); }
     <div id="view-familias" class="view"></div>
     <div id="view-profesionales" class="view"></div>
     <div id="view-sesiones" class="view"></div>
+    <div id="view-cuentas" class="view"></div>
+    <div id="view-pagos" class="view"></div>
     <div id="view-honorarios" class="view"></div>
     <div id="view-historial-pagos" class="view"></div>
     <div id="view-cobros" class="view"></div>
     <div id="view-donaciones" class="view"></div>
     <div id="view-cierre" class="view"></div>
     <div id="view-reporte-donante" class="view"></div>
+    <div id="view-configuracion" class="view"></div>
   </main>
 </div>
 
@@ -696,14 +711,16 @@ const STORAGE_KEYS = {
   sesiones: 'itzjak_sesiones',
   donaciones: 'itzjak_donaciones',
   familias: 'itzjak_familias',
+  cuentas: 'itzjak_cuentas',
+  movimientos: 'itzjak_movimientos',
   inicializado: 'itzjak_inicializado',
   version: 'itzjak_version',
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v2.0-familias";
+const VERSION_ACTUAL = "v4.0-import";
+// Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
-  Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
 }
 
@@ -873,6 +890,22 @@ let DONACIONES = cargar(STORAGE_KEYS.donaciones, []);
 
 let FAMILIAS = cargar(STORAGE_KEYS.familias, []);
 
+// === Cuentas (Zelle, Venmo, Bolívares, Efectivo + custom) ===
+const CUENTAS_INICIALES = [
+  { id: 1, nombre: "Zelle", tipo: "Zelle", moneda: "USD", referencia: "", color: "#1e40af", activa: true, predeterminada: true },
+  { id: 2, nombre: "Venmo", tipo: "Venmo", moneda: "USD", referencia: "", color: "#0e7490", activa: true, predeterminada: true },
+  { id: 3, nombre: "Bolívares (Mercantil)", tipo: "Bolívares", moneda: "Bs", referencia: "", color: "#92400e", activa: true, predeterminada: true },
+  { id: 4, nombre: "Efectivo", tipo: "Efectivo", moneda: "USD", referencia: "", color: "#6b21a8", activa: true, predeterminada: true },
+];
+let CUENTAS = cargar(STORAGE_KEYS.cuentas, null);
+if (!CUENTAS || CUENTAS.length === 0) {
+  CUENTAS = CUENTAS_INICIALES;
+  guardar(STORAGE_KEYS.cuentas, CUENTAS);
+}
+
+// === Movimientos (transacciones de cuentas) ===
+let MOVIMIENTOS = cargar(STORAGE_KEYS.movimientos, []);
+
 function pagosRealizados() {
   const grupo = {};
   for (const s of SESIONES.filter(s => s.estado_pago_itzjak === "pagado")) {
@@ -893,6 +926,47 @@ function guardarPacientes() { guardar(STORAGE_KEYS.pacientes, PACIENTES); }
 function guardarSesiones() { guardar(STORAGE_KEYS.sesiones, SESIONES); }
 function guardarDonaciones() { guardar(STORAGE_KEYS.donaciones, DONACIONES); }
 function guardarFamilias() { guardar(STORAGE_KEYS.familias, FAMILIAS); }
+function guardarCuentas() { guardar(STORAGE_KEYS.cuentas, CUENTAS); }
+function guardarMovimientos() { guardar(STORAGE_KEYS.movimientos, MOVIMIENTOS); }
+
+// === Helper: registra un movimiento (entrada/salida) en una cuenta ===
+function registrarMovimiento({ cuenta_id, tipo, monto, concepto, categoria, fecha, referencia, ref_tipo, ref_id, notas }) {
+  if (!cuenta_id) {
+    // Si no se pasó cuenta_id, intentar deducir por método de pago
+    return null;
+  }
+  const mov = {
+    id: nuevoId(MOVIMIENTOS),
+    cuenta_id,
+    tipo, // "entrada" o "salida"
+    monto: parseFloat(monto) || 0,
+    concepto: concepto || '',
+    categoria: categoria || '',
+    fecha: fecha instanceof Date ? fecha : new Date(fecha),
+    referencia: referencia || '',
+    ref_tipo: ref_tipo || '', // 'donacion', 'honorario', 'pago_extra', 'ajuste'
+    ref_id: ref_id || null,
+    notas: notas || '',
+    creado_en: new Date(),
+  };
+  MOVIMIENTOS.push(mov);
+  guardarMovimientos();
+  return mov;
+}
+
+// === Helper: obtener cuenta por nombre/método ===
+function cuentaPorMetodo(metodo) {
+  // Busca cuenta predeterminada por tipo
+  const c = CUENTAS.find(x => x.activa !== false && (x.nombre === metodo || x.tipo === metodo));
+  return c || null;
+}
+
+// === Helper: balance de una cuenta ===
+function balanceDeCuenta(cuentaId) {
+  return MOVIMIENTOS
+    .filter(m => m.cuenta_id === cuentaId)
+    .reduce((sum, m) => sum + (m.tipo === "entrada" ? m.monto : -m.monto), 0);
+}
 
 function nuevoId(coleccion) {
   if (!coleccion.length) return 1;
@@ -955,9 +1029,11 @@ function cambiarVista(view) {
     dashboard: renderDashboard, pacientes: renderPacientes,
     familias: renderFamilias,
     profesionales: renderProfesionales, sesiones: renderSesiones,
+    cuentas: renderCuentas, pagos: renderPagos,
     honorarios: renderHonorarios, "historial-pagos": renderHistorialPagos,
     cobros: renderCobros, donaciones: renderDonaciones,
     cierre: renderCierre, "reporte-donante": renderReporteDonante,
+    configuracion: renderConfiguracion,
   };
   r[view]?.();
 }
@@ -3272,9 +3348,1314 @@ function confirmarLiquidacion(profId) {
   guardarSesiones();
   guardarProfesionales();
 
+  // Crear movimiento de salida en la cuenta correspondiente
+  const cuenta = cuentaPorMetodo(metodo);
+  if (cuenta && total > 0) {
+    registrarMovimiento({
+      cuenta_id: cuenta.id,
+      tipo: "salida",
+      monto: total,
+      concepto: `Honorarios a ${prof.nombre} (${idsAPagar.length} sesiones)`,
+      categoria: "Honorarios",
+      fecha: fechaPago,
+      referencia,
+      ref_tipo: "honorario",
+      ref_id: prof.id,
+      notas,
+    });
+  }
+
   cerrarModal();
   alert(`✓ Pago confirmado: ${ui.formatMoney(total)} a ${prof.nombre} (${idsAPagar.length} sesiones)`);
   renderHonorarios();
+}
+
+// ============================================================
+// CONFIGURACIÓN — sistema, importar Excel, exportar datos
+// ============================================================
+
+function renderConfiguracion() {
+  const stats = {
+    profesionales: PROFESIONALES.length,
+    pacientes: PACIENTES.length,
+    familias: FAMILIAS.length,
+    sesiones: SESIONES.length,
+    donaciones: DONACIONES.length,
+    cuentas: CUENTAS.length,
+    movimientos: MOVIMIENTOS.length,
+  };
+
+  document.getElementById("view-configuracion").innerHTML = `
+    <div class="header-row">
+      <h1>Configuración</h1>
+    </div>
+    <p class="muted" style="margin-bottom:24px">Importa, exporta y gestiona los datos del sistema.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:16px;margin-bottom:24px">
+
+      <div style="background:white;border:1px solid var(--gris-200);border-radius:14px;padding:24px;border-left:4px solid var(--azul)">
+        <h2 style="margin-bottom:8px">Cargar Excel de inventario</h2>
+        <p style="color:var(--gris-500);font-size:13px;margin-bottom:16px">
+          Importa el archivo <strong>Control_de_usuarios.xlsx</strong>. Detecta familias, pacientes, profesionales y tratamientos automáticamente.
+        </p>
+        <input type="file" id="excelFile" accept=".xlsx,.xls" style="display:none" onchange="procesarExcel(this)">
+        <button class="btn-primary btn-full" onclick="document.getElementById('excelFile').click()">
+          📁 Seleccionar archivo Excel
+        </button>
+        <div id="excelStatus" style="margin-top:12px"></div>
+      </div>
+
+      <div style="background:white;border:1px solid var(--gris-200);border-radius:14px;padding:24px;border-left:4px solid var(--verde)">
+        <h2 style="margin-bottom:8px">Exportar respaldo</h2>
+        <p style="color:var(--gris-500);font-size:13px;margin-bottom:16px">
+          Descarga todos tus datos en un archivo JSON. Útil para hacer backup antes de cargas grandes o cambios.
+        </p>
+        <button class="btn-success btn-full" onclick="exportarRespaldo()">
+          💾 Descargar respaldo
+        </button>
+      </div>
+
+      <div style="background:white;border:1px solid var(--gris-200);border-radius:14px;padding:24px;border-left:4px solid var(--naranja)">
+        <h2 style="margin-bottom:8px">Restaurar desde respaldo</h2>
+        <p style="color:var(--gris-500);font-size:13px;margin-bottom:16px">
+          Carga un archivo JSON previamente exportado. <strong>Reemplazará todos los datos actuales.</strong>
+        </p>
+        <input type="file" id="backupFile" accept=".json" style="display:none" onchange="restaurarRespaldo(this)">
+        <button class="btn-secondary btn-full" onclick="document.getElementById('backupFile').click()">
+          📂 Cargar archivo de respaldo
+        </button>
+      </div>
+
+      <div style="background:white;border:1px solid var(--gris-200);border-radius:14px;padding:24px;border-left:4px solid var(--rojo)">
+        <h2 style="margin-bottom:8px">Resetear todos los datos</h2>
+        <p style="color:var(--gris-500);font-size:13px;margin-bottom:16px">
+          Borra TODO: profesionales, pacientes, familias, sesiones, donaciones, cuentas y movimientos. Esta acción no se puede deshacer.
+        </p>
+        <button class="btn-secondary btn-full" onclick="resetearTodo()" style="color:var(--rojo);border-color:var(--rojo)">
+          🗑 Borrar todos los datos
+        </button>
+      </div>
+    </div>
+
+    <h2 style="margin-bottom:14px">Estado del sistema</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>Categoría</th><th class="right">Cantidad</th></tr></thead>
+        <tbody>
+          <tr><td>👥 Profesionales</td><td class="right"><strong>${stats.profesionales}</strong></td></tr>
+          <tr><td>🏠 Familias</td><td class="right"><strong>${stats.familias}</strong></td></tr>
+          <tr><td>🧑 Pacientes</td><td class="right"><strong>${stats.pacientes}</strong></td></tr>
+          <tr><td>📅 Sesiones</td><td class="right"><strong>${stats.sesiones}</strong></td></tr>
+          <tr><td>❤️ Donaciones</td><td class="right"><strong>${stats.donaciones}</strong></td></tr>
+          <tr><td>💰 Cuentas</td><td class="right"><strong>${stats.cuentas}</strong></td></tr>
+          <tr><td>📊 Movimientos</td><td class="right"><strong>${stats.movimientos}</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ============================================================
+// IMPORTADOR DE EXCEL — parser inteligente
+// ============================================================
+
+// Mapas de aliases para normalizar nombres de profesionales del Excel
+// Las keys deben estar normalizadas (sin acentos, lowercase, espacios simples)
+const ALIASES_PROFESIONALES_RAW = {
+  "sol benchimol": "Sol Benchimol",
+  "sol benchimmol": "Sol Benchimol",
+  "lucia pestana": "Lucía Pestana",
+  "lucía pestana": "Lucía Pestana",
+  "luciana pestana": "Lucía Pestana",
+  "petra aponte": "Petra Aponte",
+  "dra petra aponte": "Petra Aponte",
+  "dra. petra aponte": "Petra Aponte",
+  "aura azocar": "Aura Azocar",
+  "dra. aura azocar": "Aura Azocar",
+  "yamira calderón": "Yamira Calderón",
+  "yamira calderon": "Yamira Calderón",
+  "elizabeth nuñez": "Elizabeth Nuñez",
+  "elizabeth nunez": "Elizabeth Nuñez",
+  "lily salama": "Lilian Salama",
+  "lilian salama": "Lilian Salama",
+  "norelly recine": "Norelly Recine",
+  "francis krivoy": "Francis Krivoy",
+  "vanessa besteiro": "Vanessa Besteiro",
+  "andrea blanco": "Andrea Blanco",
+  "karen lobo": "Karen Lobo",
+  "gabriel guevara": "Gabriel Guevara",
+  "genesis gómez": "Genesis Gómez",
+  "genesis  gómez": "Genesis Gómez",
+  "genesis gomez": "Genesis Gómez",
+  "melanie dupatrocinio": "Melanie Dupatrocinio",
+  "mariana sánchez": "Mariana Sánchez",
+  "mariana sanchez": "Mariana Sánchez",
+  "maria bolivar": "Maria Bolívar",
+  "maría bolivar": "Maria Bolívar",
+  "elena borges": "Elena Borges",
+  "norma garmendia": "Norma Garmendia",
+  "rebeca tueti": "Rebeca Tueti",
+  "adriana vera": "Adriana Vera",
+  "jorge alvarez": "Jorge Álvarez",
+  "yulissa dickson": "Yulissa Dickson",
+  "yusmary riera": "Yusmary Riera",
+  "katrin perez": "Katrin Pérez",
+  "katrin pérez": "Katrin Pérez",
+  "joselis garcía": "Joselis García",
+  "joselis garcia": "Joselis García",
+  "invedin": "INVEDIN",
+};
+
+// Crear el mapa real con keys normalizadas (sin acentos)
+const ALIASES_PROFESIONALES = {};
+Object.keys(ALIASES_PROFESIONALES_RAW).forEach(k => {
+  const norm = k.toLowerCase().trim().replace(/\s+/g, " ").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  ALIASES_PROFESIONALES[norm] = ALIASES_PROFESIONALES_RAW[k];
+});
+
+const ALIASES_ESPECIALIDAD_RAW = {
+  "psicologia": "Psicología",
+  "psicología": "Psicología",
+  "psicoterapia": "Psicoterapia",
+  "psiquiatria": "Psiquiatría",
+  "psquiatría": "Psiquiatría",
+  "psiquiatría": "Psiquiatría",
+  "terapia ocupacional": "Terapia Ocupacional",
+  "terapia de lenguaje": "Terapia de Lenguaje",
+  "terapia de familia": "Terapia de Familia",
+  "terapia de pareja": "Terapia de Pareja",
+  "terapia psicológica": "Psicoterapia",
+  "terapia psicologica": "Psicoterapia",
+  "terapia de conducta": "Terapia de Conducta",
+  "psicopedagogia": "Psicopedagogía",
+  "psicopedagogía": "Psicopedagogía",
+  "evaluación neuropsicológica": "Eval. Neuropsicológica",
+  "evaluacion neuropsicologica": "Eval. Neuropsicológica",
+  "evaluación psicológica": "Eval. Psicológica",
+  "evaluacion psicologica": "Eval. Psicológica",
+  "triaje": "Triaje",
+  "grupo ddss": "Grupo DDSS",
+};
+
+const ALIASES_ESPECIALIDAD = {};
+Object.keys(ALIASES_ESPECIALIDAD_RAW).forEach(k => {
+  const norm = k.toLowerCase().trim().replace(/\s+/g, " ").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  ALIASES_ESPECIALIDAD[norm] = ALIASES_ESPECIALIDAD_RAW[k];
+});
+
+function normalizarTexto(s) {
+  return (s || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // quitar acentos para matching
+}
+
+// Parsea un campo de servicio del Excel y retorna {profesional_nombre, especialidad}
+function parsearServicio(textoServicio) {
+  if (!textoServicio || !textoServicio.trim()) return null;
+  const txt = textoServicio.trim();
+
+  // Si solo es un nombre (ej: "Andrea Blanco"), buscar en aliases
+  const txtNorm = normalizarTexto(txt);
+  if (ALIASES_PROFESIONALES[txtNorm]) {
+    return { profesional_nombre: ALIASES_PROFESIONALES[txtNorm], especialidad: "Psicología" };
+  }
+
+  // Detectar separador (puede ser " - ", "-", " — ")
+  const partes = txt.split(/\s*[-—]\s*/).map(p => p.trim()).filter(Boolean);
+  if (partes.length < 2) {
+    // Solo un nombre, sin especialidad clara
+    const profNorm = normalizarTexto(txt);
+    return {
+      profesional_nombre: ALIASES_PROFESIONALES[profNorm] || txt,
+      especialidad: "Psicología",
+    };
+  }
+
+  // Detectar cuál parte es especialidad y cuál es nombre
+  // Patrón normal: "Especialidad - Nombre"
+  let especialidad = partes[0];
+  let nombre = partes.slice(1).join(" ").trim();
+
+  const especialidadNorm = normalizarTexto(especialidad);
+  const nombreNorm = normalizarTexto(nombre);
+
+  // Caso invertido: "Yamira Calderón-Psiquiatría"
+  if (!ALIASES_ESPECIALIDAD[especialidadNorm] && ALIASES_ESPECIALIDAD[nombreNorm]) {
+    [especialidad, nombre] = [nombre, especialidad];
+  }
+
+  // Limpiar título (Dra. / Lic. / Prof.)
+  nombre = nombre.replace(/^(Dr\.|Dra\.|Lic\.|Prof\.|Sr\.|Sra\.)\s*/i, "").trim();
+
+  const espFinal = ALIASES_ESPECIALIDAD[normalizarTexto(especialidad)] || especialidad;
+  const nombreFinal = ALIASES_PROFESIONALES[normalizarTexto(nombre)] || nombre;
+
+  return {
+    profesional_nombre: nombreFinal,
+    especialidad: espFinal,
+  };
+}
+
+// Procesa el archivo Excel
+function procesarExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const status = document.getElementById("excelStatus");
+  status.innerHTML = '<div style="color:var(--azul)">Leyendo archivo...</div>';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+
+      // Buscar la hoja más reciente con 67+ columnas (el formato moderno)
+      // Preferir "ENERO 26" o la última hoja con formato extendido
+      let hojaUsar = null;
+      const preferidas = ['ENERO 26', 'NOVIEMBRE 25', 'OCTUBRE 25 FINAL', 'SEPTIEMBRE 25 FINAL'];
+      for (const nombre of preferidas) {
+        if (wb.SheetNames.includes(nombre)) {
+          hojaUsar = nombre;
+          break;
+        }
+      }
+      if (!hojaUsar) {
+        // Tomar la última hoja
+        hojaUsar = wb.SheetNames[wb.SheetNames.length - 1];
+      }
+
+      const sheet = wb.Sheets[hojaUsar];
+      const filas = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+
+      // Procesar y mostrar preview
+      const resultado = analizarExcel(filas, hojaUsar);
+      mostrarPreviewImport(resultado);
+    } catch (err) {
+      console.error(err);
+      status.innerHTML = `<div style="color:var(--rojo)">Error leyendo el Excel: ${err.message}</div>`;
+    }
+  };
+  reader.onerror = function() {
+    status.innerHTML = '<div style="color:var(--rojo)">Error al leer el archivo</div>';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Analiza las filas del Excel y arma el resultado
+function analizarExcel(filas, nombreHoja) {
+  const resultado = {
+    hoja: nombreHoja,
+    profesionalesNuevos: [],
+    profesionalesExistentes: [],
+    familiasNuevas: [],
+    familiasExistentes: [],
+    pacientesNuevos: [],
+    pacientesExistentes: [],
+    tratamientosNuevos: [],
+    errores: [],
+    raw: { filas: filas.length },
+  };
+
+  // Mapear profesionales únicos por nombre normalizado → datos
+  const profesionalesMap = new Map(); // key: nombre+esp normalizado
+  const familiasMap = new Map(); // key: apellido normalizado
+  const pacientesNuevosArr = [];
+
+  // Extraer apellido del nombre completo
+  const extraerApellido = (nombre) => {
+    if (!nombre) return null;
+    const partes = nombre.trim().split(/\s+/);
+    return partes[partes.length - 1];
+  };
+
+  for (let i = 1; i < filas.length; i++) {
+    const fila = filas[i];
+    if (!fila) continue;
+    const nombrePrincipal = fila[0];
+    if (!nombrePrincipal || !String(nombrePrincipal).trim()) continue;
+
+    const nombreFamiliar = String(nombrePrincipal).trim();
+    const hijosTexto = fila[1] ? String(fila[1]).trim() : null;
+    const numUsuarios = parseFloat(fila[2]) || 1;
+    const grupoEtario = fila[3] ? String(fila[3]).trim() : "Adulto";
+    const sexo = fila[4] ? String(fila[4]).trim() : null;
+    const subsidio = fila[6] && String(fila[6]).toLowerCase() === "si";
+    const tsCanalizado = fila[7] && String(fila[7]).toLowerCase().includes("si");
+    const telefono = fila[8] ? String(fila[8]).trim() : "";
+    const motivo = fila[9] ? String(fila[9]).trim() : "Pendiente de evaluar";
+    const observaciones = fila[11] ? String(fila[11]).trim() : "";
+    const edad = parseFloat(fila[13]) || null;
+    const grado = fila[14] ? String(fila[14]).trim() : null;
+    const colegio = fila[15] ? String(fila[15]).trim() : null;
+
+    // Apellido familiar: usar el último apellido del nombre principal
+    const apellidoFam = extraerApellido(nombreFamiliar) || "Sin apellido";
+    const apellidoNorm = normalizarTexto(apellidoFam);
+
+    // Crear o reusar familia
+    let familia;
+    if (!familiasMap.has(apellidoNorm)) {
+      // Buscar si ya existe en el sistema
+      const existente = FAMILIAS.find(f => normalizarTexto(f.apellido) === apellidoNorm);
+      if (existente) {
+        familia = { ...existente, _existente: true };
+        resultado.familiasExistentes.push(familia);
+      } else {
+        familia = {
+          _nuevo: true,
+          apellido: apellidoFam,
+          telefono: telefono,
+          email: "",
+          capacidad_pago: subsidio ? "Subsidio total" : "Media",
+          notas: "",
+        };
+        resultado.familiasNuevas.push(familia);
+      }
+      familiasMap.set(apellidoNorm, familia);
+    } else {
+      familia = familiasMap.get(apellidoNorm);
+    }
+
+    // Determinar miembros de la familia (la fila puede representar múltiples)
+    let miembros = [];
+    if (numUsuarios > 1 && hijosTexto) {
+      // El "nombre principal" es la mamá/papá, los hijos están en la columna 2
+      const hijosLista = hijosTexto.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+      // Solo incluir a los hijos como pacientes (la mamá es contacto, no paciente)
+      // PERO: si grupoEtario es "Adulto" y motivo está, la mamá también es paciente
+      if (grupoEtario === "Adulto" && motivo && motivo.length > 5) {
+        miembros.push({ nombre: nombreFamiliar, esResponsable: true });
+      } else {
+        // Solo es contacto/responsable, no paciente
+        familia._responsableNombre = nombreFamiliar;
+        familia._responsableEsContacto = true;
+      }
+      hijosLista.forEach(h => miembros.push({ nombre: h, esResponsable: false }));
+    } else {
+      // Una sola persona (es el paciente)
+      miembros.push({ nombre: nombreFamiliar, esResponsable: true });
+    }
+
+    // Recolectar servicios (columnas 17, 23, 29, 35)
+    const servicios = [];
+    [17, 23, 29, 35].forEach((idxBase, idx) => {
+      const i0 = idxBase - 1; // index basado en 0
+      const servTexto = fila[i0];
+      if (!servTexto || !String(servTexto).trim()) return;
+      const numTerapias = parseFloat(fila[i0 + 1]) || 4;
+      const montoPacPorTerapia = parseFloat(fila[i0 + 2]) || 0;
+      const montoItzjakPorTerapia = parseFloat(fila[i0 + 4]) || 0;
+
+      const parsed = parsearServicio(String(servTexto));
+      if (!parsed) return;
+
+      const tarifaTotal = montoPacPorTerapia + montoItzjakPorTerapia;
+      servicios.push({
+        profesional_nombre: parsed.profesional_nombre,
+        especialidad: parsed.especialidad,
+        tarifa_total: tarifaTotal > 0 ? tarifaTotal : (montoItzjakPorTerapia + montoPacPorTerapia),
+        monto_paciente: montoPacPorTerapia,
+        monto_itzjak: montoItzjakPorTerapia,
+        sesiones_planificadas_mes: numTerapias,
+      });
+
+      // Registrar profesional si no existe
+      const keyProf = normalizarTexto(parsed.profesional_nombre + "|" + parsed.especialidad);
+      if (!profesionalesMap.has(keyProf)) {
+        const existente = PROFESIONALES.find(p =>
+          normalizarTexto(p.nombre) === normalizarTexto(parsed.profesional_nombre) &&
+          normalizarTexto(p.especialidad) === normalizarTexto(parsed.especialidad)
+        );
+        if (existente) {
+          profesionalesMap.set(keyProf, { ...existente, _existente: true });
+          if (!resultado.profesionalesExistentes.find(x => x.id === existente.id)) {
+            resultado.profesionalesExistentes.push(existente);
+          }
+        } else {
+          const nuevo = {
+            _nuevo: true,
+            nombre: parsed.profesional_nombre,
+            especialidad: parsed.especialidad,
+            honorario_sesion: tarifaTotal > 0 ? tarifaTotal : 40,
+            frecuencia_pago: "Mensual",
+            metodo_pago_preferido: "Zelle",
+            telefono: "",
+            email: "",
+            referencia_pago: "",
+            notas: "",
+            activo: true,
+            ultimo_pago: new Date().toISOString().slice(0,10),
+          };
+          profesionalesMap.set(keyProf, nuevo);
+          resultado.profesionalesNuevos.push(nuevo);
+        }
+      }
+    });
+
+    // Crear pacientes (uno por miembro)
+    miembros.forEach(m => {
+      const nombreNorm = normalizarTexto(m.nombre);
+      const existente = PACIENTES.find(p => normalizarTexto(p.nombre_completo) === nombreNorm);
+      if (existente) {
+        if (!resultado.pacientesExistentes.find(x => x.id === existente.id)) {
+          resultado.pacientesExistentes.push(existente);
+        }
+        return;
+      }
+
+      // Solo el primer miembro hereda los servicios; los demás miembros (hijos)
+      // tienen sus propios servicios solo si la fila era de 1 paciente
+      const esElPacientePrincipal = numUsuarios === 1 || m.esResponsable;
+      const tratsAplicables = esElPacientePrincipal ? servicios : [];
+
+      const pacGrupo = m === miembros[0] ? grupoEtario : (numUsuarios > 1 ? "NNA" : grupoEtario);
+
+      const nuevo = {
+        _nuevo: true,
+        nombre_completo: m.nombre,
+        cedula: "",
+        telefono: telefono,
+        grupo_etario: pacGrupo,
+        sexo: sexo || "Femenino",
+        edad: m === miembros[0] ? edad : null,
+        colegio: colegio,
+        grado: grado,
+        motivo_consulta: motivo,
+        observaciones: observaciones,
+        requiere_subsidio: subsidio,
+        referido_colegio: !!colegio,
+        ts_canalizado: tsCanalizado,
+        estado: "activo",
+        tratamientos: tratsAplicables.map(t => ({
+          ...t,
+          id: `t-tmp-${Math.random().toString(36).slice(2)}`,
+        })),
+        _familiaApellido: apellidoFam,
+        _esResponsable: m.esResponsable,
+      };
+      pacientesNuevosArr.push(nuevo);
+      resultado.pacientesNuevos.push(nuevo);
+    });
+
+    // Si la familia tiene un responsable que no es paciente (contacto puro), guardarlo en familia
+    if (familia._nuevo && familia._responsableNombre && !familia._responsableEsContacto) {
+      familia._responsableNombre = familia._responsableNombre;
+    }
+  }
+
+  return resultado;
+}
+
+let RESULTADO_IMPORT_PENDIENTE = null;
+
+function mostrarPreviewImport(r) {
+  RESULTADO_IMPORT_PENDIENTE = r;
+  const status = document.getElementById("excelStatus");
+  status.innerHTML = `
+    <div style="background:var(--azul-bg);padding:16px;border-radius:10px;border-left:4px solid var(--azul);margin-top:12px">
+      <strong>📊 Preview de la importación</strong><br>
+      <small>Hoja procesada: <strong>${r.hoja}</strong> · ${r.raw.filas} filas leídas</small>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:8px;margin-top:12px">
+      <div style="background:white;padding:12px;border-radius:8px;border:1px solid var(--gris-200)">
+        <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;font-weight:700">Profesionales</div>
+        <div style="font-size:20px;font-weight:700;color:var(--verde)">+${r.profesionalesNuevos.length} nuevos</div>
+        <div style="font-size:12px;color:var(--gris-500)">${r.profesionalesExistentes.length} ya existían</div>
+      </div>
+      <div style="background:white;padding:12px;border-radius:8px;border:1px solid var(--gris-200)">
+        <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;font-weight:700">Familias</div>
+        <div style="font-size:20px;font-weight:700;color:var(--verde)">+${r.familiasNuevas.length} nuevas</div>
+        <div style="font-size:12px;color:var(--gris-500)">${r.familiasExistentes.length} ya existían</div>
+      </div>
+      <div style="background:white;padding:12px;border-radius:8px;border:1px solid var(--gris-200)">
+        <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;font-weight:700">Pacientes</div>
+        <div style="font-size:20px;font-weight:700;color:var(--verde)">+${r.pacientesNuevos.length} nuevos</div>
+        <div style="font-size:12px;color:var(--gris-500)">${r.pacientesExistentes.length} ya existían</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn-secondary btn-full" onclick="cancelarImport()">Cancelar</button>
+      <button class="btn-amarillo btn-full" onclick="abrirDetalleImport()">Ver detalle</button>
+      <button class="btn-primary btn-full" onclick="confirmarImport()">✓ Importar todo</button>
+    </div>
+  `;
+}
+
+function cancelarImport() {
+  RESULTADO_IMPORT_PENDIENTE = null;
+  document.getElementById("excelStatus").innerHTML = '';
+  document.getElementById("excelFile").value = '';
+}
+
+function abrirDetalleImport() {
+  const r = RESULTADO_IMPORT_PENDIENTE;
+  if (!r) return;
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">CF</span>
+        <div>
+          <div class="name">Detalle de la importación</div>
+          <div class="meta">Revisa qué se va a crear</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <h3>Profesionales nuevos (${r.profesionalesNuevos.length})</h3>
+      ${r.profesionalesNuevos.length > 0 ? `
+        <div class="card" style="margin-bottom:16px">
+          <table>
+            <thead><tr><th>Nombre</th><th>Especialidad</th><th>Honorario</th></tr></thead>
+            <tbody>
+              ${r.profesionalesNuevos.map(p => `
+                <tr><td><strong>${p.nombre}</strong></td><td>${p.especialidad}</td><td>${ui.formatMoney(p.honorario_sesion)}</td></tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : '<p style="color:var(--gris-400)">Ninguno nuevo</p>'}
+
+      <h3>Familias nuevas (${r.familiasNuevas.length})</h3>
+      ${r.familiasNuevas.length > 0 ? `
+        <div class="card" style="margin-bottom:16px">
+          <table>
+            <thead><tr><th>Apellido</th><th>Teléfono</th><th>Capacidad</th></tr></thead>
+            <tbody>
+              ${r.familiasNuevas.map(f => `
+                <tr><td><strong>${f.apellido}</strong></td><td>${f.telefono || '—'}</td><td>${f.capacidad_pago}</td></tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : '<p style="color:var(--gris-400)">Ninguna nueva</p>'}
+
+      <h3>Pacientes nuevos (${r.pacientesNuevos.length})</h3>
+      ${r.pacientesNuevos.length > 0 ? `
+        <div class="card">
+          <table>
+            <thead><tr><th>Nombre</th><th>Familia</th><th>Grupo</th><th>Subsidio</th><th>Tratamientos</th></tr></thead>
+            <tbody>
+              ${r.pacientesNuevos.map(p => `
+                <tr>
+                  <td><strong>${p.nombre_completo}</strong></td>
+                  <td>${p._familiaApellido}</td>
+                  <td>${ui.badgeGrupo(p.grupo_etario)}</td>
+                  <td>${p.requiere_subsidio ? '<span class="badge badge-si">SI</span>' : '—'}</td>
+                  <td>${p.tratamientos.length}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : '<p style="color:var(--gris-400)">Ninguno nuevo</p>'}
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+      <button class="btn-primary" onclick="cerrarModal();confirmarImport()">✓ Importar todo</button>
+    </div>
+  `);
+}
+
+function confirmarImport() {
+  const r = RESULTADO_IMPORT_PENDIENTE;
+  if (!r) return;
+  if (!confirm(`¿Importar ${r.profesionalesNuevos.length} profesionales, ${r.familiasNuevas.length} familias y ${r.pacientesNuevos.length} pacientes?`)) return;
+
+  // 1. Crear profesionales
+  const mapaProfNuevoAId = new Map();
+  r.profesionalesNuevos.forEach(p => {
+    const id = nuevoId(PROFESIONALES);
+    const limpio = { ...p, id };
+    delete limpio._nuevo;
+    PROFESIONALES.push(limpio);
+    const key = normalizarTexto(p.nombre + "|" + p.especialidad);
+    mapaProfNuevoAId.set(key, id);
+  });
+  guardarProfesionales();
+
+  // 2. Crear familias
+  const mapaFamApellidoAId = new Map();
+  r.familiasNuevas.forEach(f => {
+    const id = nuevoId(FAMILIAS);
+    const limpia = {
+      id,
+      apellido: f.apellido,
+      telefono: f.telefono || "",
+      email: f.email || "",
+      capacidad_pago: f.capacidad_pago,
+      notas: f.notas || "",
+      responsable_id: null,
+      responsable_nombre: f._responsableNombre || "",
+      creada_en: new Date(),
+    };
+    FAMILIAS.push(limpia);
+    mapaFamApellidoAId.set(normalizarTexto(f.apellido), id);
+  });
+  // Mapear también las familias existentes
+  FAMILIAS.forEach(f => {
+    const k = normalizarTexto(f.apellido);
+    if (!mapaFamApellidoAId.has(k)) mapaFamApellidoAId.set(k, f.id);
+  });
+  guardarFamilias();
+
+  // 3. Crear pacientes con tratamientos vinculados
+  r.pacientesNuevos.forEach(p => {
+    const id = nuevoId(PACIENTES);
+    const familiaId = mapaFamApellidoAId.get(normalizarTexto(p._familiaApellido)) || null;
+
+    // Resolver IDs de profesionales en tratamientos
+    const tratamientosFinal = p.tratamientos.map(t => {
+      const keyProf = normalizarTexto(t.profesional_nombre + "|" + t.especialidad);
+      let profId = mapaProfNuevoAId.get(keyProf);
+      if (!profId) {
+        const existente = PROFESIONALES.find(prof =>
+          normalizarTexto(prof.nombre) === normalizarTexto(t.profesional_nombre) &&
+          normalizarTexto(prof.especialidad) === normalizarTexto(t.especialidad)
+        );
+        profId = existente ? existente.id : null;
+      }
+      return {
+        id: `t-${id}-${Math.random().toString(36).slice(2,7)}`,
+        profesional_id: profId,
+        profesional_nombre: t.profesional_nombre,
+        especialidad: t.especialidad,
+        tarifa_total: t.tarifa_total,
+        monto_paciente: t.monto_paciente,
+        monto_itzjak: t.monto_itzjak,
+        sesiones_planificadas_mes: t.sesiones_planificadas_mes,
+      };
+    }).filter(t => t.profesional_id);
+
+    const pac = {
+      id,
+      nombre_completo: p.nombre_completo,
+      cedula: p.cedula || `V-${Math.floor(Math.random()*900000+10000000)}`,
+      telefono: p.telefono,
+      grupo_etario: p.grupo_etario,
+      sexo: p.sexo,
+      edad: p.edad,
+      colegio: p.colegio,
+      grado: p.grado,
+      motivo_consulta: p.motivo_consulta,
+      observaciones: p.observaciones,
+      requiere_subsidio: p.requiere_subsidio,
+      referido_colegio: p.referido_colegio,
+      ts_canalizado: p.ts_canalizado,
+      estado: p.estado,
+      tratamientos: tratamientosFinal,
+      familia_id: familiaId,
+      creado_en: new Date(),
+    };
+    PACIENTES.push(pac);
+
+    // Si era el responsable de la familia y la familia no tiene responsable, asignarlo
+    if (p._esResponsable && familiaId) {
+      const fam = FAMILIAS.find(f => f.id === familiaId);
+      if (fam && !fam.responsable_id) {
+        fam.responsable_id = id;
+        fam.responsable_nombre = p.nombre_completo;
+      }
+    }
+  });
+  guardarPacientes();
+  guardarFamilias();
+
+  // Reset y mensaje
+  RESULTADO_IMPORT_PENDIENTE = null;
+  document.getElementById("excelFile").value = '';
+  alert(`✓ Importación completada\n\n• ${r.profesionalesNuevos.length} profesionales nuevos\n• ${r.familiasNuevas.length} familias nuevas\n• ${r.pacientesNuevos.length} pacientes nuevos\n\nTotales actuales:\n• ${PROFESIONALES.length} profesionales\n• ${FAMILIAS.length} familias\n• ${PACIENTES.length} pacientes`);
+  renderConfiguracion();
+}
+
+// ============================================================
+// EXPORTAR / RESTAURAR RESPALDO
+// ============================================================
+
+function exportarRespaldo() {
+  const data = {
+    version: VERSION_ACTUAL,
+    fecha: new Date().toISOString(),
+    profesionales: PROFESIONALES,
+    pacientes: PACIENTES,
+    sesiones: SESIONES,
+    donaciones: DONACIONES,
+    familias: FAMILIAS,
+    cuentas: CUENTAS,
+    movimientos: MOVIMIENTOS,
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `itzjak-respaldo-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function restaurarRespaldo(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!confirm("Esto REEMPLAZARÁ todos los datos actuales con los del archivo. ¿Continuar?")) {
+    input.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (data.profesionales) { PROFESIONALES = data.profesionales; guardarProfesionales(); }
+      if (data.pacientes) { PACIENTES = data.pacientes; guardarPacientes(); }
+      if (data.sesiones) { SESIONES = data.sesiones; guardarSesiones(); }
+      if (data.donaciones) { DONACIONES = data.donaciones; guardarDonaciones(); }
+      if (data.familias) { FAMILIAS = data.familias; guardarFamilias(); }
+      if (data.cuentas) { CUENTAS = data.cuentas; guardarCuentas(); }
+      if (data.movimientos) { MOVIMIENTOS = data.movimientos; guardarMovimientos(); }
+      alert("✓ Respaldo restaurado correctamente");
+      renderConfiguracion();
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+// ============================================================
+// CUENTAS — vista principal con tarjetas y movimientos
+// ============================================================
+
+function renderCuentas() {
+  const cuentasActivas = CUENTAS.filter(c => c.activa !== false);
+
+  // Calcular balances
+  const cuentasConBalance = cuentasActivas.map(c => ({
+    ...c,
+    balance: balanceDeCuenta(c.id),
+    movimientosCount: MOVIMIENTOS.filter(m => m.cuenta_id === c.id).length,
+  }));
+
+  // Total USD (suma todas las cuentas en USD)
+  const totalUSD = cuentasConBalance
+    .filter(c => c.moneda === "USD")
+    .reduce((sum, c) => sum + c.balance, 0);
+  const totalBs = cuentasConBalance
+    .filter(c => c.moneda === "Bs")
+    .reduce((sum, c) => sum + c.balance, 0);
+
+  // Movimientos del mes
+  const hoy = new Date();
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const movimientosMes = MOVIMIENTOS.filter(m => new Date(m.fecha) >= inicioMes);
+  const entradaMes = movimientosMes.filter(m => m.tipo === "entrada").reduce((s, m) => s + m.monto, 0);
+  const salidaMes = movimientosMes.filter(m => m.tipo === "salida").reduce((s, m) => s + m.monto, 0);
+
+  document.getElementById("view-cuentas").innerHTML = `
+    <div class="header-row">
+      <h1>Cuentas</h1>
+      <div style="display:flex;gap:8px">
+        <button class="btn-secondary" onclick="modalNuevaCuenta()">+ Nueva cuenta</button>
+        <button class="btn-primary" onclick="cambiarVista('pagos');setTimeout(() => modalNuevoPago(), 100)">+ Nuevo pago</button>
+      </div>
+    </div>
+    <p class="muted" style="margin-bottom:20px">Resumen de tus cuentas y efectivo. Las donaciones suman, los honorarios y pagos restan.</p>
+
+    <div class="kpi-grid" style="margin-bottom:24px">
+      <div class="kpi-card">
+        <div class="kpi-header"><div class="kpi-label">Total en USD</div></div>
+        <div class="kpi-value">${ui.formatMoney(totalUSD)}</div>
+        <div class="kpi-foot">Suma de cuentas en USD</div>
+      </div>
+      ${totalBs > 0 ? `
+        <div class="kpi-card amarillo">
+          <div class="kpi-header"><div class="kpi-label">Total en Bolívares</div></div>
+          <div class="kpi-value">Bs ${totalBs.toLocaleString("es-VE", {maximumFractionDigits:0})}</div>
+          <div class="kpi-foot">Cuentas en Bs</div>
+        </div>
+      ` : ''}
+      <div class="kpi-card green">
+        <div class="kpi-header"><div class="kpi-label">Entradas del mes</div></div>
+        <div class="kpi-value green">${ui.formatMoney(entradaMes)}</div>
+        <div class="kpi-foot">Donaciones y otros</div>
+      </div>
+      <div class="kpi-card red">
+        <div class="kpi-header"><div class="kpi-label">Salidas del mes</div></div>
+        <div class="kpi-value red">${ui.formatMoney(salidaMes)}</div>
+        <div class="kpi-foot">Honorarios y pagos</div>
+      </div>
+    </div>
+
+    <h2 style="margin-bottom:14px">Mis cuentas</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:16px;margin-bottom:24px">
+      ${cuentasConBalance.map(c => {
+        const formatBalance = c.moneda === "Bs"
+          ? `Bs ${c.balance.toLocaleString("es-VE", {maximumFractionDigits:0})}`
+          : ui.formatMoney(c.balance);
+        return `
+          <div style="background:white;border:1px solid var(--gris-200);border-radius:14px;padding:20px;cursor:pointer;border-left:4px solid ${c.color}" onclick="verCuenta(${c.id})">
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
+              <div>
+                <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">${c.tipo}</div>
+                <div style="font-size:16px;font-weight:700;margin-top:2px">${c.nombre}</div>
+                ${c.referencia ? `<div style="font-size:11px;color:var(--gris-500);margin-top:2px">${c.referencia}</div>` : ''}
+              </div>
+              <span class="code-tag" style="background:${c.color}22;color:${c.color}">${c.moneda}</span>
+            </div>
+            <div style="font-size:28px;font-weight:700;color:${c.balance < 0 ? 'var(--rojo)' : 'var(--azul)'};margin-bottom:6px">${formatBalance}</div>
+            <div style="font-size:12px;color:var(--gris-500)">${c.movimientosCount} movimientos · click para ver detalle</div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+
+    <h2 style="margin-bottom:14px">Últimos movimientos</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>Fecha</th><th>Concepto</th><th>Cuenta</th><th>Categoría</th><th class="right">Monto</th></tr></thead>
+        <tbody>
+          ${MOVIMIENTOS.length === 0 ? '<tr><td colspan="5" class="empty-state">Aún no hay movimientos.<br>Registra una donación o un pago para empezar.</td></tr>' :
+            MOVIMIENTOS.slice().sort((a,b) => new Date(b.fecha) - new Date(a.fecha)).slice(0, 15).map(m => {
+              const c = CUENTAS.find(x => x.id === m.cuenta_id);
+              const formato = c && c.moneda === "Bs"
+                ? `Bs ${m.monto.toLocaleString("es-VE", {maximumFractionDigits:0})}`
+                : ui.formatMoney(m.monto);
+              return `
+                <tr class="clickable" onclick="verCuenta(${m.cuenta_id})">
+                  <td>${ui.formatDate(m.fecha)}</td>
+                  <td>
+                    <div style="font-weight:600">${m.concepto}</div>
+                    ${m.referencia ? `<div style="font-size:11px;color:var(--gris-500)">${m.referencia}</div>` : ''}
+                  </td>
+                  <td>${c ? c.nombre : '—'}</td>
+                  <td><span class="badge" style="background:var(--gris-100);color:var(--gris-700)">${m.categoria || '—'}</span></td>
+                  <td class="right" style="font-weight:700;color:${m.tipo === 'entrada' ? 'var(--verde)' : 'var(--rojo)'}">
+                    ${m.tipo === 'entrada' ? '+' : '−'}${formato}
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function verCuenta(cuentaId) {
+  const c = CUENTAS.find(x => x.id === cuentaId);
+  if (!c) return;
+  const movs = MOVIMIENTOS.filter(m => m.cuenta_id === cuentaId).sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+  const balance = balanceDeCuenta(cuentaId);
+  const entradas = movs.filter(m => m.tipo === "entrada").reduce((s, m) => s + m.monto, 0);
+  const salidas = movs.filter(m => m.tipo === "salida").reduce((s, m) => s + m.monto, 0);
+  const formatN = n => c.moneda === "Bs"
+    ? `Bs ${n.toLocaleString("es-VE", {maximumFractionDigits:0})}`
+    : ui.formatMoney(n);
+
+  // Calcular saldo corrido (running balance)
+  let saldoCorrido = balance;
+  const movsConSaldo = movs.map(m => {
+    const saldoActual = saldoCorrido;
+    saldoCorrido -= m.tipo === 'entrada' ? m.monto : -m.monto;
+    return { ...m, saldoDespues: saldoActual };
+  });
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag" style="background:${c.color}22;color:${c.color}">CT</span>
+        <div>
+          <div class="name">${c.nombre}</div>
+          <div class="meta">${c.tipo} · ${c.moneda}${c.referencia ? ' · ' + c.referencia : ''}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+
+    <div class="detail-hero" style="background:linear-gradient(135deg, ${c.color} 0%, ${c.color}dd 100%)">
+      <div class="detail-avatar" style="background:rgba(255,255,255,0.2)">${c.tipo.substring(0,2).toUpperCase()}</div>
+      <div class="detail-hero-main">
+        <h2>${c.nombre}</h2>
+        <div class="meta">${c.movimientosCount || movs.length} movimientos · ${c.moneda}</div>
+        <div style="margin-top:14px;font-size:36px;font-weight:700">${formatN(balance)}</div>
+        <div style="font-size:12px;opacity:0.85;text-transform:uppercase;letter-spacing:1px;font-weight:700">Balance actual</div>
+      </div>
+    </div>
+
+    <div class="detail-stats">
+      <div class="detail-stat green">
+        <div class="num green">${formatN(entradas)}</div>
+        <div class="lbl">Entradas</div>
+        <div class="sub">${movs.filter(m=>m.tipo==='entrada').length} movs</div>
+      </div>
+      <div class="detail-stat red">
+        <div class="num" style="color:var(--rojo)">${formatN(salidas)}</div>
+        <div class="lbl">Salidas</div>
+        <div class="sub">${movs.filter(m=>m.tipo==='salida').length} movs</div>
+      </div>
+      <div class="detail-stat">
+        <div class="num">${movs.length}</div>
+        <div class="lbl">Total movimientos</div>
+        <div class="sub">${c.moneda}</div>
+      </div>
+      <div class="detail-stat ${balance >= 0 ? 'green' : 'red'}">
+        <div class="num ${balance >= 0 ? 'green' : ''}" ${balance < 0 ? 'style="color:var(--rojo)"' : ''}>${formatN(balance)}</div>
+        <div class="lbl">Balance</div>
+        <div class="sub">disponible</div>
+      </div>
+    </div>
+
+    <div style="padding:20px 28px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="margin:0">Historial de movimientos</h3>
+        ${!c.predeterminada ? `<button class="btn-secondary btn-sm" onclick="modalEditarCuenta(${c.id})">Editar cuenta</button>` : ''}
+      </div>
+      ${movs.length === 0 ? '<div class="empty-state">Sin movimientos en esta cuenta</div>' : `
+        <div class="card">
+          <table>
+            <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th class="right">Monto</th><th class="right">Saldo</th></tr></thead>
+            <tbody>
+              ${movsConSaldo.map(m => `
+                <tr>
+                  <td>${ui.formatDate(m.fecha)}</td>
+                  <td>
+                    <div style="font-weight:600;font-size:13px">${m.concepto}</div>
+                    ${m.referencia ? `<div style="font-size:11px;color:var(--gris-500)">${m.referencia}</div>` : ''}
+                  </td>
+                  <td><span class="badge" style="background:var(--gris-100);color:var(--gris-700)">${m.categoria || '—'}</span></td>
+                  <td class="right" style="font-weight:700;color:${m.tipo === 'entrada' ? 'var(--verde)' : 'var(--rojo)'}">
+                    ${m.tipo === 'entrada' ? '+' : '−'}${formatN(m.monto)}
+                  </td>
+                  <td class="right" style="font-weight:600;color:var(--gris-600)">${formatN(m.saldoDespues)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+    </div>
+  `);
+}
+
+function modalNuevaCuenta() {
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">CT</span>
+        <div>
+          <div class="name">Nueva cuenta</div>
+          <div class="meta">Agrega una cuenta personalizada</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div class="form-group">
+        <label>Nombre de la cuenta *</label>
+        <input type="text" id="nc_nombre" placeholder="Ej: PayPal, Cuenta BOFA, etc.">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Tipo</label>
+          <input type="text" id="nc_tipo" placeholder="Ej: Banco, Digital, Otro" value="Otro">
+        </div>
+        <div class="form-group">
+          <label>Moneda *</label>
+          <select id="nc_moneda">
+            <option value="USD">USD ($)</option>
+            <option value="Bs">Bolívares (Bs)</option>
+            <option value="EUR">EUR (€)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Referencia / Cuenta</label>
+        <input type="text" id="nc_referencia" placeholder="Ej: número de cuenta, email, etc.">
+      </div>
+      <div class="form-group">
+        <label>Color (para identificarla visualmente)</label>
+        <select id="nc_color">
+          <option value="#1e40af">Azul</option>
+          <option value="#0e7490">Cyan</option>
+          <option value="#10b981">Verde</option>
+          <option value="#92400e">Marrón</option>
+          <option value="#6b21a8">Morado</option>
+          <option value="#dc2626">Rojo</option>
+          <option value="#f59e0b">Naranja</option>
+        </select>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="crearCuenta()">Crear cuenta</button>
+    </div>
+  `);
+}
+
+function crearCuenta() {
+  const nombre = document.getElementById("nc_nombre").value.trim();
+  if (!nombre) { alert("El nombre es obligatorio"); return; }
+  const nueva = {
+    id: nuevoId(CUENTAS),
+    nombre,
+    tipo: document.getElementById("nc_tipo").value.trim() || "Otro",
+    moneda: document.getElementById("nc_moneda").value,
+    referencia: document.getElementById("nc_referencia").value.trim(),
+    color: document.getElementById("nc_color").value,
+    activa: true,
+    predeterminada: false,
+  };
+  CUENTAS.push(nueva);
+  guardarCuentas();
+  cerrarModal();
+  renderCuentas();
+}
+
+function modalEditarCuenta(id) {
+  const c = CUENTAS.find(x => x.id === id);
+  if (!c) return;
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">CT</span>
+        <div>
+          <div class="name">Editar cuenta</div>
+          <div class="meta">${c.nombre}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div class="form-group">
+        <label>Nombre *</label>
+        <input type="text" id="ec_nombre" value="${c.nombre}">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Tipo</label>
+          <input type="text" id="ec_tipo" value="${c.tipo}">
+        </div>
+        <div class="form-group">
+          <label>Moneda</label>
+          <select id="ec_moneda">
+            <option value="USD" ${c.moneda === 'USD' ? 'selected' : ''}>USD</option>
+            <option value="Bs" ${c.moneda === 'Bs' ? 'selected' : ''}>Bolívares</option>
+            <option value="EUR" ${c.moneda === 'EUR' ? 'selected' : ''}>EUR</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Referencia</label>
+        <input type="text" id="ec_referencia" value="${c.referencia || ''}">
+      </div>
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="ec_activa" ${c.activa !== false ? 'checked' : ''}>
+          Cuenta activa
+        </label>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      ${!c.predeterminada ? `<button class="btn-secondary" onclick="confirmarBorrarCuenta(${id})" style="color:var(--rojo);border-color:var(--rojo)">Eliminar</button>` : ''}
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="guardarEdicionCuenta(${id})">Guardar</button>
+    </div>
+  `);
+}
+
+function guardarEdicionCuenta(id) {
+  const c = CUENTAS.find(x => x.id === id);
+  if (!c) return;
+  c.nombre = document.getElementById("ec_nombre").value.trim();
+  c.tipo = document.getElementById("ec_tipo").value.trim();
+  c.moneda = document.getElementById("ec_moneda").value;
+  c.referencia = document.getElementById("ec_referencia").value.trim();
+  c.activa = document.getElementById("ec_activa").checked;
+  guardarCuentas();
+  cerrarModal();
+  renderCuentas();
+}
+
+function confirmarBorrarCuenta(id) {
+  const c = CUENTAS.find(x => x.id === id);
+  if (!c) return;
+  const tieneMov = MOVIMIENTOS.some(m => m.cuenta_id === id);
+  if (tieneMov) {
+    alert(`No se puede eliminar "${c.nombre}" porque tiene movimientos. Si quieres ocultarla, desmarca "Cuenta activa" y guarda.`);
+    return;
+  }
+  if (!confirm(`¿Eliminar la cuenta "${c.nombre}"?`)) return;
+  CUENTAS = CUENTAS.filter(x => x.id !== id);
+  guardarCuentas();
+  cerrarModal();
+  renderCuentas();
+}
+
+// ============================================================
+// PAGOS / GASTOS — registro de gastos extras
+// ============================================================
+
+function renderPagos() {
+  // Pagos extra = movimientos de salida con ref_tipo === 'pago_extra'
+  const pagosExtra = MOVIMIENTOS.filter(m => m.ref_tipo === "pago_extra")
+    .sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+
+  const totalPagos = pagosExtra.reduce((s, m) => s + m.monto, 0);
+  const hoy = new Date();
+  const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const totalMes = pagosExtra.filter(m => new Date(m.fecha) >= inicioMes).reduce((s, m) => s + m.monto, 0);
+
+  document.getElementById("view-pagos").innerHTML = `
+    <div class="header-row">
+      <h1>Pagos / Gastos</h1>
+      <button class="btn-primary" onclick="modalNuevoPago()">+ Nuevo pago</button>
+    </div>
+    <p class="muted" style="margin-bottom:20px">Registra cualquier pago o gasto que no sea honorario (renta, materiales, servicios, etc.).</p>
+
+    <div class="kpi-grid" style="margin-bottom:24px">
+      <div class="kpi-card red">
+        <div class="kpi-header"><div class="kpi-label">Total gastos del mes</div></div>
+        <div class="kpi-value red">${ui.formatMoney(totalMes)}</div>
+        <div class="kpi-foot">${pagosExtra.filter(m => new Date(m.fecha) >= inicioMes).length} pagos</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-header"><div class="kpi-label">Total histórico</div></div>
+        <div class="kpi-value">${ui.formatMoney(totalPagos)}</div>
+        <div class="kpi-foot">${pagosExtra.length} pagos registrados</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Cuenta</th><th>Beneficiario</th><th class="right">Monto</th></tr></thead>
+        <tbody>
+          ${pagosExtra.length === 0 ? '<tr><td colspan="6" class="empty-state">Aún no hay pagos registrados.<br>Click "+ Nuevo pago" para registrar el primero.</td></tr>' :
+            pagosExtra.map(m => {
+              const c = CUENTAS.find(x => x.id === m.cuenta_id);
+              return `
+                <tr>
+                  <td>${ui.formatDate(m.fecha)}</td>
+                  <td>
+                    <div style="font-weight:600">${m.concepto}</div>
+                    ${m.referencia ? `<div style="font-size:11px;color:var(--gris-500)">Ref: ${m.referencia}</div>` : ''}
+                  </td>
+                  <td><span class="badge" style="background:var(--gris-100);color:var(--gris-700)">${m.categoria || '—'}</span></td>
+                  <td>${c ? c.nombre : '—'}</td>
+                  <td>${m.notas || '—'}</td>
+                  <td class="right" style="font-weight:700;color:var(--rojo)">−${ui.formatMoney(m.monto)}</td>
+                </tr>
+              `;
+            }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function modalNuevoPago() {
+  const cuentasActivas = CUENTAS.filter(c => c.activa !== false);
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">PG</span>
+        <div>
+          <div class="name">Nuevo pago / gasto</div>
+          <div class="meta">Registrar un pago extra</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div class="form-group">
+        <label>Concepto *</label>
+        <input type="text" id="np_concepto" placeholder="Ej: Renta abril 2026, Materiales, Internet...">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Categoría *</label>
+          <select id="np_categoria">
+            <option>Renta</option>
+            <option>Servicios</option>
+            <option>Materiales</option>
+            <option>Software</option>
+            <option>Marketing</option>
+            <option>Eventos</option>
+            <option>Capacitación</option>
+            <option>Comisiones</option>
+            <option>Otro</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Fecha *</label>
+          <input type="date" id="np_fecha">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Monto *</label>
+          <input type="number" id="np_monto" placeholder="0" step="0.01" min="0">
+        </div>
+        <div class="form-group">
+          <label>Cuenta *</label>
+          <select id="np_cuenta">
+            ${cuentasActivas.map(c => `<option value="${c.id}">${c.nombre} (${c.moneda})</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Beneficiario / A quién se le pagó</label>
+        <input type="text" id="np_beneficiario" placeholder="Ej: Sr. González, Empresa XYZ">
+      </div>
+      <div class="form-group">
+        <label>Referencia / Comprobante</label>
+        <input type="text" id="np_referencia" placeholder="Ej: Z-1234, factura #5678">
+      </div>
+      <div class="form-group">
+        <label>Notas (opcional)</label>
+        <textarea id="np_notas" rows="2"></textarea>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="guardarNuevoPago()">Guardar pago</button>
+    </div>
+  `);
+  setTimeout(() => { const f = document.getElementById("np_fecha"); if (f) f.valueAsDate = new Date(); }, 0);
+}
+
+function guardarNuevoPago() {
+  const concepto = document.getElementById("np_concepto").value.trim();
+  const fecha = document.getElementById("np_fecha").value;
+  const monto = parseFloat(document.getElementById("np_monto").value);
+  const cuentaId = parseInt(document.getElementById("np_cuenta").value);
+
+  if (!concepto || !fecha || !monto || monto <= 0 || !cuentaId) {
+    alert("Completa concepto, fecha, monto válido y cuenta");
+    return;
+  }
+
+  registrarMovimiento({
+    cuenta_id: cuentaId,
+    tipo: "salida",
+    monto,
+    concepto,
+    categoria: document.getElementById("np_categoria").value,
+    fecha: new Date(fecha + 'T12:00:00'),
+    referencia: document.getElementById("np_referencia").value.trim(),
+    ref_tipo: "pago_extra",
+    notas: document.getElementById("np_beneficiario").value.trim() ||
+           document.getElementById("np_notas").value.trim(),
+  });
+
+  cerrarModal();
+  renderPagos();
 }
 
 // ============================================================
@@ -3529,16 +4910,39 @@ function guardarNuevaDonacion() {
     return;
   }
 
-  DONACIONES.push({
+  const metodo = document.getElementById("don_metodo").value;
+  const referencia = document.getElementById("don_ref").value.trim();
+  const notas = document.getElementById("don_notas").value.trim();
+
+  const nuevaDonacion = {
     id: nuevoId(DONACIONES),
     fecha: new Date(fecha + 'T12:00:00'),
     donante,
     monto,
-    metodo: document.getElementById("don_metodo").value,
-    referencia: document.getElementById("don_ref").value.trim(),
-    notas: document.getElementById("don_notas").value.trim(),
-  });
+    metodo,
+    referencia,
+    notas,
+  };
+  DONACIONES.push(nuevaDonacion);
   guardarDonaciones();
+
+  // Crear movimiento en la cuenta correspondiente
+  const cuenta = cuentaPorMetodo(metodo);
+  if (cuenta) {
+    registrarMovimiento({
+      cuenta_id: cuenta.id,
+      tipo: "entrada",
+      monto,
+      concepto: `Donación de ${donante}`,
+      categoria: "Donación",
+      fecha: nuevaDonacion.fecha,
+      referencia,
+      ref_tipo: "donacion",
+      ref_id: nuevaDonacion.id,
+      notas,
+    });
+  }
+
   cerrarModal();
   renderDonaciones();
 }
