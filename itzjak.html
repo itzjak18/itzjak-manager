@@ -844,7 +844,7 @@ const STORAGE_KEYS = {
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v10.0-firebase-completo";
+const VERSION_ACTUAL = "v10.1-firebase-bolivares";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -4423,7 +4423,7 @@ function liquidarHonorario(profId) {
       </div>
 
       <div class="form-group">
-        <label>Total a pagar</label>
+        <label>Total a pagar (en USD)</label>
         <input type="text" id="liqTotal" value="${ui.formatMoney(total)}" readonly style="font-size:18px;font-weight:700;color:var(--rojo)">
       </div>
 
@@ -4433,14 +4433,31 @@ function liquidarHonorario(profId) {
           <input type="date" id="liqFecha">
         </div>
         <div class="form-group">
-          <label>Método</label>
-          <select id="liqMetodo">
-            <option value="Zelle" ${prof.metodo_pago_preferido === 'Zelle' ? 'selected' : ''}>Zelle</option>
-            <option value="Venmo" ${prof.metodo_pago_preferido === 'Venmo' ? 'selected' : ''}>Venmo</option>
-            <option value="Bolívares" ${prof.metodo_pago_preferido === 'Bolívares' ? 'selected' : ''}>Bolívares (Mercantil)</option>
-            <option value="Efectivo" ${prof.metodo_pago_preferido === 'Efectivo' ? 'selected' : ''}>Efectivo</option>
+          <label>Cuenta de la que sale</label>
+          <select id="liqCuenta" onchange="actualizarConversionLiq(${total})">
+            ${CUENTAS.filter(c => c.activa !== false).map(c => `<option value="${c.id}" data-moneda="${c.moneda}" ${(prof.metodo_pago_preferido === c.tipo || prof.metodo_pago_preferido === c.nombre) ? 'selected' : ''}>${c.nombre} (${c.moneda})</option>`).join("")}
           </select>
         </div>
+      </div>
+
+      <div id="liq_tasaBox" style="display:none;background:var(--azul-bg);border-left:3px solid var(--azul);padding:12px;border-radius:8px;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--azul);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px">Tasa de cambio (la cuenta es en Bs)</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="liq_tasaTipo" value="bcv" checked onchange="actualizarConversionLiq(${total})">
+            <span><strong>BCV</strong> ${TASAS.bcv > 0 ? '@ Bs ' + TASAS.bcv.toFixed(2) : '(no configurada)'}</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="liq_tasaTipo" value="p2p" onchange="actualizarConversionLiq(${total})">
+            <span><strong>P2P</strong> ${TASAS.p2p > 0 ? '@ Bs ' + TASAS.p2p.toFixed(2) : '(no configurada)'}</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="liq_tasaTipo" value="manual" onchange="actualizarConversionLiq(${total})">
+            <span><strong>Manual</strong></span>
+          </label>
+          <input type="number" id="liq_tasaManual" step="0.01" placeholder="Bs/$" style="width:120px;padding:4px 8px;font-size:13px" oninput="actualizarConversionLiq(${total})">
+        </div>
+        <div id="liq_conversionPreview" style="margin-top:10px;font-size:13px;color:var(--gris-700);font-weight:500"></div>
       </div>
 
       <div class="form-group">
@@ -4470,19 +4487,25 @@ function liquidarHonorario(profId) {
           .filter(x => x.checked)
           .reduce((s, x) => s + parseFloat(x.dataset.monto), 0);
         document.getElementById("liqTotal").value = ui.formatMoney(sum);
+        actualizarConversionLiq(sum);
       });
     });
+    actualizarConversionLiq(total);
   }, 0);
 }
 
 async function confirmarLiquidacion(profId) {
   const prof = PROFESIONALES.find(p => p.id === profId);
   const fecha = document.getElementById("liqFecha").value;
-  const metodo = document.getElementById("liqMetodo").value;
+  const cuentaId = parseInt(document.getElementById("liqCuenta").value);
   const referencia = document.getElementById("liqRef").value.trim();
   const notas = document.getElementById("liqNotas").value.trim();
 
   if (!fecha) { alert("Debes poner la fecha del pago"); return; }
+  if (!cuentaId) { alert("Selecciona la cuenta de la que sale el pago"); return; }
+
+  const cuenta = CUENTAS.find(c => c.id === cuentaId);
+  if (!cuenta) { alert("Cuenta inválida"); return; }
 
   const idsAPagar = Array.from(document.querySelectorAll(".liq-check"))
     .filter(x => x.checked)
@@ -4491,20 +4514,36 @@ async function confirmarLiquidacion(profId) {
   if (idsAPagar.length === 0) { alert("Selecciona al menos una sesión"); return; }
 
   const fechaPago = new Date(fecha + 'T12:00:00');
-  let total = 0;
+  let totalUSD = 0;
   const sesionesAfectadas = [];
 
   SESIONES.forEach(s => {
     if (idsAPagar.includes(s.id)) {
       s.estado_pago_itzjak = "pagado";
       s.fecha_pago = fechaPago;
-      s.metodo_pago = metodo;
+      s.metodo_pago = cuenta.nombre;
+      s.cuenta_id = cuentaId;
       s.referencia_pago = referencia;
       s.notas_pago = notas;
-      total += s.monto_itzjak;
+      totalUSD += s.monto_itzjak;
       sesionesAfectadas.push(s);
     }
   });
+
+  // Si la cuenta es Bs, convertir total
+  let montoEnCuenta = totalUSD;
+  let tasaUsada = null;
+  let tipoTasa = null;
+  if (cuenta.moneda === "Bs") {
+    tasaUsada = obtenerTasaSeleccionada("liq");
+    const radios = document.getElementsByName("liq_tasaTipo");
+    for (const r of radios) if (r.checked) tipoTasa = r.value;
+    if (!tasaUsada || tasaUsada <= 0) {
+      alert("Necesitas una tasa de cambio válida porque la cuenta es en Bolívares.");
+      return;
+    }
+    montoEnCuenta = totalUSD * tasaUsada;
+  }
 
   // Actualizar último pago del profesional
   prof.ultimo_pago = fecha;
@@ -4512,29 +4551,33 @@ async function confirmarLiquidacion(profId) {
   guardarSesiones();
   guardarProfesionales();
 
-  // Sincronizar a Firestore: cada sesión afectada y el profesional
+  // Sincronizar a Firestore
   for (const s of sesionesAfectadas) await fbGuardarSesion(s);
   await fbGuardarProfesional(prof);
 
-  // Crear movimiento de salida en la cuenta correspondiente
-  const cuenta = cuentaPorMetodo(metodo);
-  if (cuenta && total > 0) {
-    await registrarMovimiento({
-      cuenta_id: cuenta.id,
-      tipo: "salida",
-      monto: total,
-      concepto: `Honorarios a ${prof.nombre} (${idsAPagar.length} sesiones)`,
-      categoria: "Honorarios",
-      fecha: fechaPago,
-      referencia,
-      ref_tipo: "honorario",
-      ref_id: prof.id,
-      notas,
-    });
-  }
+  // Crear movimiento de salida
+  const conceptoMovimiento = cuenta.moneda === "Bs"
+    ? `Honorarios a ${prof.nombre} (${idsAPagar.length} sesiones, $${totalUSD.toFixed(2)} @ tasa ${tasaUsada.toFixed(2)})`
+    : `Honorarios a ${prof.nombre} (${idsAPagar.length} sesiones)`;
+
+  await registrarMovimiento({
+    cuenta_id: cuentaId,
+    tipo: "salida",
+    monto: montoEnCuenta,
+    concepto: conceptoMovimiento,
+    categoria: "Honorarios",
+    fecha: fechaPago,
+    referencia,
+    ref_tipo: "honorario",
+    ref_id: prof.id,
+    notas,
+  });
 
   cerrarModal();
-  alert(`✓ Pago confirmado: ${ui.formatMoney(total)} a ${prof.nombre} (${idsAPagar.length} sesiones)`);
+  const msg = cuenta.moneda === "Bs"
+    ? `✓ Pago confirmado: Bs ${montoEnCuenta.toLocaleString("es-VE", {maximumFractionDigits:0})} (= $${totalUSD.toFixed(2)}) a ${prof.nombre}`
+    : `✓ Pago confirmado: ${ui.formatMoney(totalUSD)} a ${prof.nombre} (${idsAPagar.length} sesiones)`;
+  alert(msg);
   renderHonorarios();
 }
 
@@ -6503,16 +6546,44 @@ function modalNuevoPago() {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div class="form-group">
-          <label>Monto *</label>
-          <input type="number" id="np_monto" placeholder="0" step="0.01" min="0">
-        </div>
-        <div class="form-group">
-          <label>Cuenta *</label>
-          <select id="np_cuenta">
-            ${cuentasActivas.map(c => `<option value="${c.id}">${c.nombre} (${c.moneda})</option>`).join("")}
+          <label>Cuenta de la que sale *</label>
+          <select id="np_cuenta" onchange="actualizarCamposPago()">
+            ${cuentasActivas.map(c => `<option value="${c.id}" data-moneda="${c.moneda}">${c.nombre} (${c.moneda})</option>`).join("")}
           </select>
         </div>
+        <div class="form-group">
+          <label>Monto pagado *</label>
+          <input type="number" id="np_monto" placeholder="0" step="0.01" min="0" oninput="actualizarConversionPago()">
+        </div>
       </div>
+      <div class="form-group">
+        <label>Moneda del monto *</label>
+        <select id="np_moneda" onchange="actualizarConversionPago()">
+          <option value="USD">USD ($)</option>
+          <option value="Bs">Bolívares (Bs)</option>
+        </select>
+      </div>
+
+      <div id="np_tasaBox" style="display:none;background:var(--azul-bg);border-left:3px solid var(--azul);padding:12px;border-radius:8px;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--azul);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px">Tasa de cambio a usar</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="np_tasaTipo" value="bcv" checked onchange="actualizarConversionPago()">
+            <span><strong>BCV</strong> ${TASAS.bcv > 0 ? '@ Bs ' + TASAS.bcv.toFixed(2) : '(no configurada)'}</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="np_tasaTipo" value="p2p" onchange="actualizarConversionPago()">
+            <span><strong>P2P</strong> ${TASAS.p2p > 0 ? '@ Bs ' + TASAS.p2p.toFixed(2) : '(no configurada)'}</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="np_tasaTipo" value="manual" onchange="actualizarConversionPago()">
+            <span><strong>Manual</strong></span>
+          </label>
+          <input type="number" id="np_tasaManual" step="0.01" placeholder="Bs/$" style="width:120px;padding:4px 8px;font-size:13px" oninput="actualizarConversionPago()">
+        </div>
+        <div id="np_conversionPreview" style="margin-top:10px;font-size:13px;color:var(--gris-700);font-weight:500"></div>
+      </div>
+
       <div class="form-group">
         <label>Beneficiario / A quién se le pagó</label>
         <input type="text" id="np_beneficiario" placeholder="Ej: Sr. González, Empresa XYZ">
@@ -6531,7 +6602,61 @@ function modalNuevoPago() {
       <button class="btn-amarillo" onclick="guardarNuevoPago()">Guardar pago</button>
     </div>
   `);
-  setTimeout(() => { const f = document.getElementById("np_fecha"); if (f) f.valueAsDate = new Date(); }, 0);
+  setTimeout(() => {
+    const f = document.getElementById("np_fecha"); if (f) f.valueAsDate = new Date();
+    actualizarCamposPago();
+  }, 0);
+}
+
+function actualizarCamposPago() {
+  const sel = document.getElementById("np_cuenta");
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  const monedaCuenta = opt?.dataset.moneda || "USD";
+  const selMoneda = document.getElementById("np_moneda");
+  if (selMoneda) selMoneda.value = monedaCuenta;
+  actualizarConversionPago();
+}
+
+function actualizarConversionPago() {
+  const sel = document.getElementById("np_cuenta");
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  const monedaCuenta = opt?.dataset.moneda || "USD";
+  const monedaIngreso = document.getElementById("np_moneda")?.value || "USD";
+  const monto = parseFloat(document.getElementById("np_monto")?.value) || 0;
+  const tasaBox = document.getElementById("np_tasaBox");
+  const preview = document.getElementById("np_conversionPreview");
+
+  const necesitaTasa = (monedaIngreso !== monedaCuenta) || (monedaIngreso === "Bs" || monedaCuenta === "Bs");
+
+  if (necesitaTasa) {
+    tasaBox.style.display = "block";
+    if (monto > 0) {
+      const tasaUsada = obtenerTasaSeleccionada("np");
+      if (tasaUsada > 0) {
+        if (monedaIngreso === "USD" && monedaCuenta === "Bs") {
+          const enCuenta = monto * tasaUsada;
+          preview.innerHTML = `Se descontará de la cuenta: <strong>Bs ${enCuenta.toLocaleString("es-VE", {maximumFractionDigits:0})}</strong> (equivalente a $${monto.toFixed(2)})`;
+        } else if (monedaIngreso === "Bs" && monedaCuenta === "USD") {
+          const enCuenta = monto / tasaUsada;
+          preview.innerHTML = `Se descontará de la cuenta: <strong>$${enCuenta.toFixed(2)}</strong> (equivalente a Bs ${monto.toLocaleString("es-VE", {maximumFractionDigits:0})})`;
+        } else if (monedaIngreso === "Bs" && monedaCuenta === "Bs") {
+          const enUsd = monto / tasaUsada;
+          preview.innerHTML = `Se descontará de la cuenta: <strong>Bs ${monto.toLocaleString("es-VE", {maximumFractionDigits:0})}</strong> (equivalente a $${enUsd.toFixed(2)})`;
+        } else {
+          preview.innerHTML = `Se descontará: <strong>$${monto.toFixed(2)}</strong>`;
+        }
+      } else {
+        preview.innerHTML = `<span style="color:var(--rojo)">⚠️ No hay tasa configurada. Configúrala en "💱 Tasas de cambio" o pon una manual arriba.</span>`;
+      }
+    } else {
+      preview.innerHTML = '';
+    }
+  } else {
+    tasaBox.style.display = "none";
+    preview.innerHTML = '';
+  }
 }
 
 async function guardarNuevoPago() {
@@ -6539,17 +6664,48 @@ async function guardarNuevoPago() {
   const fecha = document.getElementById("np_fecha").value;
   const monto = parseFloat(document.getElementById("np_monto").value);
   const cuentaId = parseInt(document.getElementById("np_cuenta").value);
+  const monedaIngreso = document.getElementById("np_moneda").value;
 
   if (!concepto || !fecha || !monto || monto <= 0 || !cuentaId) {
     alert("Completa concepto, fecha, monto válido y cuenta");
     return;
   }
 
+  const cuenta = CUENTAS.find(c => c.id === cuentaId);
+  if (!cuenta) { alert("Cuenta inválida"); return; }
+  const monedaCuenta = cuenta.moneda;
+
+  let montoEnCuenta = monto;
+  let tasaUsada = null;
+  let tipoTasa = null;
+
+  if (monedaIngreso !== monedaCuenta) {
+    tasaUsada = obtenerTasaSeleccionada("np");
+    const radios = document.getElementsByName("np_tasaTipo");
+    for (const r of radios) if (r.checked) tipoTasa = r.value;
+
+    if (!tasaUsada || tasaUsada <= 0) {
+      alert("Necesitas una tasa de cambio válida para hacer la conversión.");
+      return;
+    }
+
+    if (monedaIngreso === "USD" && monedaCuenta === "Bs") {
+      montoEnCuenta = monto * tasaUsada;
+    } else if (monedaIngreso === "Bs" && monedaCuenta === "USD") {
+      montoEnCuenta = monto / tasaUsada;
+    }
+  }
+
+  // Concepto enriquecido si hubo conversión
+  const conceptoFinal = monedaIngreso !== monedaCuenta
+    ? `${concepto} (pagado ${monedaIngreso === 'USD' ? '$' : 'Bs '}${monto.toLocaleString("es-VE", {maximumFractionDigits:2})} @ tasa ${tasaUsada?.toFixed(2)})`
+    : concepto;
+
   await registrarMovimiento({
     cuenta_id: cuentaId,
     tipo: "salida",
-    monto,
-    concepto,
+    monto: montoEnCuenta,
+    concepto: conceptoFinal,
     categoria: document.getElementById("np_categoria").value,
     fecha: new Date(fecha + 'T12:00:00'),
     referencia: document.getElementById("np_referencia").value.trim(),
@@ -6752,6 +6908,7 @@ function renderDonaciones() {
 }
 
 function modalNuevaDonacion() {
+  const cuentasActivas = CUENTAS.filter(c => c.activa !== false);
   abrirModal(`
     <div class="modal-header">
       <div class="id-cell">
@@ -6774,19 +6931,47 @@ function modalNuevaDonacion() {
           <input type="date" id="donFecha">
         </div>
         <div class="form-group">
-          <label>Monto ($) *</label>
-          <input type="number" id="don_monto" placeholder="0" step="0.01">
+          <label>Cuenta destino *</label>
+          <select id="don_cuenta" onchange="actualizarCamposDonacion()">
+            ${cuentasActivas.map(c => `<option value="${c.id}" data-moneda="${c.moneda}">${c.nombre} (${c.moneda})</option>`).join("")}
+          </select>
         </div>
       </div>
-      <div class="form-group">
-        <label>Método *</label>
-        <select id="don_metodo">
-          <option>Zelle</option>
-          <option>Venmo</option>
-          <option>Bolívares</option>
-          <option>Efectivo</option>
-        </select>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Monto recibido *</label>
+          <input type="number" id="don_monto" placeholder="0" step="0.01" oninput="actualizarConversionDonacion()">
+        </div>
+        <div class="form-group">
+          <label>Moneda del monto *</label>
+          <select id="don_moneda" onchange="actualizarConversionDonacion()">
+            <option value="USD">USD ($)</option>
+            <option value="Bs">Bolívares (Bs)</option>
+          </select>
+        </div>
       </div>
+
+      <div id="don_tasaBox" style="display:none;background:var(--azul-bg);border-left:3px solid var(--azul);padding:12px;border-radius:8px;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--azul);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:8px">Tasa de cambio a usar</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="don_tasaTipo" value="bcv" checked onchange="actualizarConversionDonacion()">
+            <span><strong>BCV</strong> ${TASAS.bcv > 0 ? '@ Bs ' + TASAS.bcv.toFixed(2) : '(no configurada)'}</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="don_tasaTipo" value="p2p" onchange="actualizarConversionDonacion()">
+            <span><strong>P2P</strong> ${TASAS.p2p > 0 ? '@ Bs ' + TASAS.p2p.toFixed(2) : '(no configurada)'}</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="radio" name="don_tasaTipo" value="manual" onchange="actualizarConversionDonacion()">
+            <span><strong>Manual</strong></span>
+          </label>
+          <input type="number" id="don_tasaManual" step="0.01" placeholder="Bs/$" style="width:120px;padding:4px 8px;font-size:13px" oninput="actualizarConversionDonacion()">
+        </div>
+        <div id="don_conversionPreview" style="margin-top:10px;font-size:13px;color:var(--gris-700);font-weight:500"></div>
+      </div>
+
       <div class="form-group">
         <label>Referencia</label>
         <input type="text" id="don_ref" placeholder="Ej: Z-4567">
@@ -6801,20 +6986,163 @@ function modalNuevaDonacion() {
       <button class="btn-amarillo" onclick="guardarNuevaDonacion()">Guardar donación</button>
     </div>
   `);
-  setTimeout(() => { const f = document.getElementById("donFecha"); if (f) f.valueAsDate = new Date(); }, 0);
+  setTimeout(() => {
+    const f = document.getElementById("donFecha"); if (f) f.valueAsDate = new Date();
+    actualizarCamposDonacion();
+  }, 0);
+}
+
+// Cuando cambia la cuenta destino, ajustar la moneda por defecto
+function actualizarCamposDonacion() {
+  const sel = document.getElementById("don_cuenta");
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  const monedaCuenta = opt?.dataset.moneda || "USD";
+  const selMoneda = document.getElementById("don_moneda");
+  if (selMoneda) selMoneda.value = monedaCuenta;
+  actualizarConversionDonacion();
+}
+
+// Calcula y muestra la conversión cuando es necesaria
+function actualizarConversionDonacion() {
+  const sel = document.getElementById("don_cuenta");
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  const monedaCuenta = opt?.dataset.moneda || "USD";
+  const monedaIngreso = document.getElementById("don_moneda")?.value || "USD";
+  const monto = parseFloat(document.getElementById("don_monto")?.value) || 0;
+  const tasaBox = document.getElementById("don_tasaBox");
+  const preview = document.getElementById("don_conversionPreview");
+
+  // Solo se necesita conversión si moneda del monto ≠ moneda de la cuenta
+  // O si la moneda es Bs (para mostrar equivalente USD)
+  const necesitaTasa = (monedaIngreso !== monedaCuenta) || (monedaIngreso === "Bs" || monedaCuenta === "Bs");
+
+  if (necesitaTasa) {
+    tasaBox.style.display = "block";
+    if (monto > 0) {
+      const tasaUsada = obtenerTasaSeleccionada("don");
+      if (tasaUsada > 0) {
+        let montoEnCuenta, equivalenteUsd, equivalenteBs;
+        if (monedaIngreso === "USD" && monedaCuenta === "Bs") {
+          montoEnCuenta = monto * tasaUsada;
+          equivalenteUsd = monto;
+          equivalenteBs = montoEnCuenta;
+          preview.innerHTML = `Se guardará en cuenta: <strong>Bs ${equivalenteBs.toLocaleString("es-VE", {maximumFractionDigits:0})}</strong> (equivalente a $${equivalenteUsd.toFixed(2)})`;
+        } else if (monedaIngreso === "Bs" && monedaCuenta === "USD") {
+          montoEnCuenta = monto / tasaUsada;
+          equivalenteUsd = montoEnCuenta;
+          equivalenteBs = monto;
+          preview.innerHTML = `Se guardará en cuenta: <strong>$${equivalenteUsd.toFixed(2)}</strong> (equivalente a Bs ${equivalenteBs.toLocaleString("es-VE", {maximumFractionDigits:0})})`;
+        } else if (monedaIngreso === "Bs" && monedaCuenta === "Bs") {
+          equivalenteUsd = monto / tasaUsada;
+          preview.innerHTML = `Se guardará en cuenta: <strong>Bs ${monto.toLocaleString("es-VE", {maximumFractionDigits:0})}</strong> (equivalente a $${equivalenteUsd.toFixed(2)})`;
+        } else {
+          preview.innerHTML = `Se guardará en cuenta: <strong>$${monto.toFixed(2)}</strong>`;
+        }
+      } else {
+        preview.innerHTML = `<span style="color:var(--rojo)">⚠️ No hay tasa configurada. Configúrala en "💱 Tasas de cambio" o pon una manual arriba.</span>`;
+      }
+    } else {
+      preview.innerHTML = '';
+    }
+  } else {
+    tasaBox.style.display = "none";
+    preview.innerHTML = '';
+  }
+}
+
+// Helper genérico para obtener la tasa según radio buttons (don/pago/etc.)
+function obtenerTasaSeleccionada(prefijo) {
+  const radios = document.getElementsByName(prefijo + "_tasaTipo");
+  let tipo = "bcv";
+  for (const r of radios) if (r.checked) tipo = r.value;
+  if (tipo === "bcv") return TASAS.bcv || 0;
+  if (tipo === "p2p") return TASAS.p2p || 0;
+  if (tipo === "manual") return parseFloat(document.getElementById(prefijo + "_tasaManual")?.value) || 0;
+  return 0;
+}
+
+// Conversión para liquidación: el total está siempre en USD (porque honorarios están en USD)
+// Si la cuenta es Bs, hay que mostrar cuántos Bs se descontarán
+function actualizarConversionLiq(totalUSD) {
+  const sel = document.getElementById("liqCuenta");
+  if (!sel) return;
+  const opt = sel.options[sel.selectedIndex];
+  const monedaCuenta = opt?.dataset.moneda || "USD";
+  const tasaBox = document.getElementById("liq_tasaBox");
+  const preview = document.getElementById("liq_conversionPreview");
+
+  if (monedaCuenta === "Bs") {
+    tasaBox.style.display = "block";
+    const tasa = obtenerTasaSeleccionada("liq");
+    if (tasa > 0) {
+      const enBs = totalUSD * tasa;
+      preview.innerHTML = `Se descontará de la cuenta: <strong>Bs ${enBs.toLocaleString("es-VE", {maximumFractionDigits:0})}</strong> (equivalente a $${totalUSD.toFixed(2)})`;
+    } else {
+      preview.innerHTML = `<span style="color:var(--rojo)">⚠️ No hay tasa configurada.</span>`;
+    }
+  } else {
+    tasaBox.style.display = "none";
+    preview.innerHTML = '';
+  }
 }
 
 async function guardarNuevaDonacion() {
   const donante = document.getElementById("don_donante").value.trim();
   const fecha = document.getElementById("donFecha").value;
   const monto = parseFloat(document.getElementById("don_monto").value);
+  const cuentaId = parseInt(document.getElementById("don_cuenta").value);
+  const monedaIngreso = document.getElementById("don_moneda").value; // USD o Bs
 
-  if (!donante || !fecha || !monto || monto <= 0) {
-    alert("Completa donante, fecha y monto válido");
+  if (!donante || !fecha || !monto || monto <= 0 || !cuentaId) {
+    alert("Completa donante, fecha, cuenta y monto válido");
     return;
   }
 
-  const metodo = document.getElementById("don_metodo").value;
+  const cuenta = CUENTAS.find(c => c.id === cuentaId);
+  if (!cuenta) { alert("Cuenta inválida"); return; }
+  const monedaCuenta = cuenta.moneda;
+
+  // Determinar el monto que se va a guardar en la cuenta
+  // (debe estar en la moneda de la cuenta)
+  let montoEnCuenta = monto;
+  let tasaUsada = null;
+  let tipoTasa = null;
+  let montoOriginalUSD = null;
+  let montoOriginalBs = null;
+
+  if (monedaIngreso !== monedaCuenta) {
+    // Hay que convertir
+    tasaUsada = obtenerTasaSeleccionada("don");
+    const radios = document.getElementsByName("don_tasaTipo");
+    for (const r of radios) if (r.checked) tipoTasa = r.value;
+
+    if (!tasaUsada || tasaUsada <= 0) {
+      alert("Necesitas una tasa de cambio válida para hacer la conversión. Configúrala en '💱 Tasas de cambio' o pon una manual.");
+      return;
+    }
+
+    if (monedaIngreso === "USD" && monedaCuenta === "Bs") {
+      montoEnCuenta = monto * tasaUsada;
+      montoOriginalUSD = monto;
+      montoOriginalBs = montoEnCuenta;
+    } else if (monedaIngreso === "Bs" && monedaCuenta === "USD") {
+      montoEnCuenta = monto / tasaUsada;
+      montoOriginalBs = monto;
+      montoOriginalUSD = montoEnCuenta;
+    }
+  } else if (monedaIngreso === "Bs") {
+    // Monto y cuenta en Bs: guardar tasa para conocer equivalente USD
+    tasaUsada = obtenerTasaSeleccionada("don");
+    const radios = document.getElementsByName("don_tasaTipo");
+    for (const r of radios) if (r.checked) tipoTasa = r.value;
+    if (tasaUsada > 0) {
+      montoOriginalBs = monto;
+      montoOriginalUSD = monto / tasaUsada;
+    }
+  }
+
   const referencia = document.getElementById("don_ref").value.trim();
   const notas = document.getElementById("don_notas").value.trim();
 
@@ -6822,8 +7150,16 @@ async function guardarNuevaDonacion() {
     id: nuevoId(DONACIONES),
     fecha: new Date(fecha + 'T12:00:00').toISOString(),
     donante,
-    monto,
-    metodo,
+    monto: montoEnCuenta, // monto en la moneda de la cuenta (para compat con código existente)
+    monto_original: monto, // lo que se ingresó originalmente
+    moneda_original: monedaIngreso,
+    moneda_cuenta: monedaCuenta,
+    tasa_usada: tasaUsada,
+    tipo_tasa: tipoTasa,
+    monto_usd: montoOriginalUSD,
+    monto_bs: montoOriginalBs,
+    metodo: cuenta.nombre, // mantener compat
+    cuenta_id: cuentaId,
     referencia,
     notas,
   };
@@ -6831,22 +7167,23 @@ async function guardarNuevaDonacion() {
   guardarDonaciones();
   await fbGuardarDonacion(nuevaDonacion);
 
-  // Crear movimiento en la cuenta correspondiente
-  const cuenta = cuentaPorMetodo(metodo);
-  if (cuenta) {
-    await registrarMovimiento({
-      cuenta_id: cuenta.id,
-      tipo: "entrada",
-      monto,
-      concepto: `Donación de ${donante}`,
-      categoria: "Donación",
-      fecha: nuevaDonacion.fecha,
-      referencia,
-      ref_tipo: "donacion",
-      ref_id: nuevaDonacion.id,
-      notas,
-    });
-  }
+  // Crear movimiento en la cuenta correspondiente con el monto convertido
+  const conceptoMonto = monedaIngreso === monedaCuenta
+    ? ''
+    : ` (recibido ${monedaIngreso === 'USD' ? '$' : 'Bs '}${monto.toLocaleString("es-VE", {maximumFractionDigits:2})} @ tasa ${tasaUsada?.toFixed(2) || '?'})`;
+
+  await registrarMovimiento({
+    cuenta_id: cuentaId,
+    tipo: "entrada",
+    monto: montoEnCuenta,
+    concepto: `Donación de ${donante}${conceptoMonto}`,
+    categoria: "Donación",
+    fecha: nuevaDonacion.fecha,
+    referencia,
+    ref_tipo: "donacion",
+    ref_id: nuevaDonacion.id,
+    notas,
+  });
 
   cerrarModal();
   renderDonaciones();
