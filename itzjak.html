@@ -844,7 +844,7 @@ const STORAGE_KEYS = {
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v10.1-firebase-bolivares";
+const VERSION_ACTUAL = "v11.0-firebase-import";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -1284,10 +1284,56 @@ function nuevoId(coleccion) {
 }
 
 // Reset para limpiar todos los datos (botón de emergencia)
-function resetearTodo() {
-  if (!confirm("¿Estás seguro? Esto borra TODOS los datos (pacientes, profesionales, sesiones, donaciones) y vuelve a cargar los datos iniciales. Esta acción no se puede deshacer.")) return;
-  Object.values(STORAGE_KEYS).forEach(k => localStorage.removeItem(k));
-  location.reload();
+async function resetearTodo() {
+  if (!confirm("⚠️ ATENCIÓN ⚠️\n\nEsto borra TODOS los datos:\n• Pacientes\n• Familias\n• Profesionales\n• Sesiones\n• Donaciones\n• Movimientos\n• Cuentas custom\n\nNO afecta usuarios ni invitaciones.\n\nEsta acción no se puede deshacer. ¿Continuar?")) return;
+  if (!confirm("Última confirmación: ¿borrar TODOS los datos del sistema (Firebase + local)?")) return;
+
+  // Mostrar barra de progreso
+  const overlay = document.createElement("div");
+  overlay.id = "resetOverlay";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center";
+  overlay.innerHTML = `
+    <div style="background:white;padding:30px 40px;border-radius:12px;max-width:400px;text-align:center">
+      <h3 style="margin:0 0 12px">Limpiando datos...</h3>
+      <p id="resetMsg" style="color:var(--gris-600);margin:0">Borrando colección: pacientes</p>
+      <div style="background:var(--gris-200);height:8px;border-radius:4px;margin-top:14px;overflow:hidden">
+        <div id="resetBar" style="background:var(--azul);height:100%;width:0%;transition:width 0.3s"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const colecciones = ["pacientes", "familias", "profesionales", "sesiones", "donaciones", "cuentas", "movimientos", "tasas"];
+  let idx = 0;
+
+  for (const col of colecciones) {
+    const msg = document.getElementById("resetMsg");
+    const bar = document.getElementById("resetBar");
+    if (msg) msg.textContent = `Borrando colección: ${col}`;
+    if (bar) bar.style.width = `${(idx / colecciones.length) * 100}%`;
+
+    try {
+      if (window.fb) {
+        const snap = await window.fb.getDocs(window.fb.collection(window.fb.db, col));
+        const promises = [];
+        snap.forEach(d => promises.push(window.fb.deleteDoc(d.ref)));
+        await Promise.all(promises);
+      }
+    } catch (e) {
+      console.error(`[resetearTodo] Error borrando ${col}:`, e);
+    }
+    idx++;
+  }
+
+  // Borrar localStorage (excepto sesión y versión)
+  const keysABorrar = ["pacientes", "familias", "profesionales", "sesiones", "donaciones", "cuentas", "movimientos", "tasas"];
+  keysABorrar.forEach(k => {
+    if (STORAGE_KEYS[k]) localStorage.removeItem(STORAGE_KEYS[k]);
+  });
+
+  const msg = document.getElementById("resetMsg");
+  if (msg) msg.textContent = "✓ Listo. Recargando...";
+  setTimeout(() => location.reload(), 800);
 }
 
 // ============================================================
@@ -5695,115 +5741,189 @@ function abrirDetalleImport() {
   `);
 }
 
-function confirmarImport() {
+async function confirmarImport() {
   const r = RESULTADO_IMPORT_PENDIENTE;
   if (!r) return;
-  if (!confirm(`¿Importar ${r.profesionalesNuevos.length} profesionales, ${r.familiasNuevas.length} familias y ${r.pacientesNuevos.length} pacientes?`)) return;
+  const totalItems = r.profesionalesNuevos.length + r.familiasNuevas.length + r.pacientesNuevos.length;
+  if (!confirm(`¿Importar ${r.profesionalesNuevos.length} profesionales, ${r.familiasNuevas.length} familias y ${r.pacientesNuevos.length} pacientes?\n\nEsto subirá ${totalItems} registros a Firebase. Puede tardar entre 30s y 2 minutos.`)) return;
 
-  // 1. Crear profesionales
-  const mapaProfNuevoAId = new Map();
-  r.profesionalesNuevos.forEach(p => {
-    const id = nuevoId(PROFESIONALES);
-    const limpio = { ...p, id };
-    delete limpio._nuevo;
-    PROFESIONALES.push(limpio);
-    const key = normalizarTexto(p.nombre + "|" + p.especialidad);
-    mapaProfNuevoAId.set(key, id);
-  });
-  guardarProfesionales();
+  // Mostrar overlay con barra de progreso
+  const overlay = document.createElement("div");
+  overlay.id = "importOverlay";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center";
+  overlay.innerHTML = `
+    <div style="background:white;padding:30px 40px;border-radius:12px;max-width:480px;width:90%;text-align:center">
+      <h3 style="margin:0 0 6px">Importando datos a Firebase</h3>
+      <p style="color:var(--gris-600);margin:0 0 14px;font-size:13px">No cierres esta ventana</p>
+      <p id="importMsg" style="color:var(--gris-700);margin:0;font-weight:500">Iniciando...</p>
+      <div style="background:var(--gris-200);height:10px;border-radius:5px;margin-top:14px;overflow:hidden">
+        <div id="importProgressBar" style="background:var(--azul);height:100%;width:0%;transition:width 0.3s"></div>
+      </div>
+      <p id="importPct" style="color:var(--gris-500);font-size:12px;margin:8px 0 0">0%</p>
+    </div>
+  `;
+  document.body.appendChild(overlay);
 
-  // 2. Crear familias
-  const mapaFamApellidoAId = new Map();
-  r.familiasNuevas.forEach(f => {
-    const id = nuevoId(FAMILIAS);
-    const limpia = {
-      id,
-      apellido: f.apellido,
-      telefono: f.telefono || "",
-      email: f.email || "",
-      capacidad_pago: f.capacidad_pago,
-      notas: f.notas || "",
-      responsable_id: null,
-      responsable_nombre: f._responsableNombre || "",
-      creada_en: new Date(),
-    };
-    FAMILIAS.push(limpia);
-    mapaFamApellidoAId.set(normalizarTexto(f.apellido), id);
-  });
-  // Mapear también las familias existentes
-  FAMILIAS.forEach(f => {
-    const k = normalizarTexto(f.apellido);
-    if (!mapaFamApellidoAId.has(k)) mapaFamApellidoAId.set(k, f.id);
-  });
-  guardarFamilias();
+  let hechos = 0;
+  const total = totalItems;
+  function setProgress(txt) {
+    const pct = Math.round((hechos / total) * 100);
+    const msgEl = document.getElementById("importMsg");
+    const barEl = document.getElementById("importProgressBar");
+    const pctEl = document.getElementById("importPct");
+    if (msgEl) msgEl.textContent = txt;
+    if (barEl) barEl.style.width = pct + "%";
+    if (pctEl) pctEl.textContent = `${hechos} / ${total} (${pct}%)`;
+  }
 
-  // 3. Crear pacientes con tratamientos vinculados
-  r.pacientesNuevos.forEach(p => {
-    const id = nuevoId(PACIENTES);
-    const familiaId = mapaFamApellidoAId.get(normalizarTexto(p._familiaApellido)) || null;
+  try {
+    // 1. Crear profesionales
+    const mapaProfNuevoAId = new Map();
+    let i = 0;
+    for (const p of r.profesionalesNuevos) {
+      i++;
+      setProgress(`Profesional ${i}/${r.profesionalesNuevos.length}: ${p.nombre}`);
+      const id = nuevoId(PROFESIONALES);
+      const limpio = { ...p, id };
+      delete limpio._nuevo;
+      PROFESIONALES.push(limpio);
+      const key = normalizarTexto(p.nombre + "|" + p.especialidad);
+      mapaProfNuevoAId.set(key, id);
+      guardarProfesionales();
+      await fbGuardarProfesional(limpio);
+      hechos++;
+      setProgress(`Profesional ${i}/${r.profesionalesNuevos.length}: ${p.nombre}`);
+    }
 
-    // Resolver IDs de profesionales en tratamientos
-    const tratamientosFinal = p.tratamientos.map(t => {
-      const keyProf = normalizarTexto(t.profesional_nombre + "|" + t.especialidad);
-      let profId = mapaProfNuevoAId.get(keyProf);
-      if (!profId) {
-        const existente = PROFESIONALES.find(prof =>
-          normalizarTexto(prof.nombre) === normalizarTexto(t.profesional_nombre) &&
-          normalizarTexto(prof.especialidad) === normalizarTexto(t.especialidad)
-        );
-        profId = existente ? existente.id : null;
-      }
-      return {
-        id: `t-${id}-${Math.random().toString(36).slice(2,7)}`,
-        profesional_id: profId,
-        profesional_nombre: t.profesional_nombre,
-        especialidad: t.especialidad,
-        tarifa_total: t.tarifa_total,
-        monto_paciente: t.monto_paciente,
-        monto_itzjak: t.monto_itzjak,
-        sesiones_planificadas_mes: t.sesiones_planificadas_mes,
+    // 2. Crear familias
+    const mapaFamApellidoAId = new Map();
+    i = 0;
+    for (const f of r.familiasNuevas) {
+      i++;
+      setProgress(`Familia ${i}/${r.familiasNuevas.length}: ${f.apellido}`);
+      const id = nuevoId(FAMILIAS);
+      const limpia = {
+        id,
+        apellido: f.apellido,
+        telefono: f.telefono || "",
+        email: f.email || "",
+        capacidad_pago: f.capacidad_pago,
+        notas: f.notas || "",
+        responsable_id: null,
+        responsable_nombre: f._responsableNombre || "",
+        creada_en: new Date().toISOString(),
       };
-    }).filter(t => t.profesional_id);
+      FAMILIAS.push(limpia);
+      mapaFamApellidoAId.set(normalizarTexto(f.apellido), id);
+      guardarFamilias();
+      await fbGuardarFamilia(limpia);
+      hechos++;
+      setProgress(`Familia ${i}/${r.familiasNuevas.length}: ${f.apellido}`);
+    }
+    // Mapear también las familias existentes
+    FAMILIAS.forEach(f => {
+      const k = normalizarTexto(f.apellido);
+      if (!mapaFamApellidoAId.has(k)) mapaFamApellidoAId.set(k, f.id);
+    });
 
-    const pac = {
-      id,
-      nombre_completo: p.nombre_completo,
-      cedula: p.cedula || `V-${Math.floor(Math.random()*900000+10000000)}`,
-      telefono: p.telefono,
-      grupo_etario: p.grupo_etario,
-      sexo: p.sexo,
-      edad: p.edad,
-      colegio: p.colegio,
-      grado: p.grado,
-      motivo_consulta: p.motivo_consulta,
-      observaciones: p.observaciones,
-      requiere_subsidio: p.requiere_subsidio,
-      referido_colegio: p.referido_colegio,
-      ts_canalizado: p.ts_canalizado,
-      estado: p.estado,
-      tratamientos: tratamientosFinal,
-      familia_id: familiaId,
-      creado_en: new Date(),
-    };
-    PACIENTES.push(pac);
+    // 3. Crear pacientes
+    i = 0;
+    const familiasAfectadas = new Set();
+    for (const p of r.pacientesNuevos) {
+      i++;
+      setProgress(`Paciente ${i}/${r.pacientesNuevos.length}: ${p.nombre_completo}`);
+      const id = nuevoId(PACIENTES);
+      const familiaId = mapaFamApellidoAId.get(normalizarTexto(p._familiaApellido)) || null;
 
-    // Si era el responsable de la familia y la familia no tiene responsable, asignarlo
-    if (p._esResponsable && familiaId) {
-      const fam = FAMILIAS.find(f => f.id === familiaId);
-      if (fam && !fam.responsable_id) {
-        fam.responsable_id = id;
-        fam.responsable_nombre = p.nombre_completo;
+      const tratamientosFinal = p.tratamientos.map(t => {
+        const keyProf = normalizarTexto(t.profesional_nombre + "|" + t.especialidad);
+        let profId = mapaProfNuevoAId.get(keyProf);
+        if (!profId) {
+          const existente = PROFESIONALES.find(prof =>
+            normalizarTexto(prof.nombre) === normalizarTexto(t.profesional_nombre) &&
+            normalizarTexto(prof.especialidad) === normalizarTexto(t.especialidad)
+          );
+          profId = existente ? existente.id : null;
+        }
+        return {
+          id: `t-${id}-${Math.random().toString(36).slice(2,7)}`,
+          profesional_id: profId,
+          profesional_nombre: t.profesional_nombre,
+          especialidad: t.especialidad,
+          tarifa_total: t.tarifa_total,
+          monto_paciente: t.monto_paciente,
+          monto_itzjak: t.monto_itzjak,
+          sesiones_planificadas_mes: t.sesiones_planificadas_mes,
+        };
+      }).filter(t => t.profesional_id);
+
+      const pac = {
+        id,
+        nombre_completo: p.nombre_completo,
+        cedula: p.cedula || `V-${Math.floor(Math.random()*900000+10000000)}`,
+        telefono: p.telefono,
+        grupo_etario: p.grupo_etario,
+        sexo: p.sexo,
+        edad: p.edad,
+        colegio: p.colegio,
+        grado: p.grado,
+        motivo_consulta: p.motivo_consulta,
+        observaciones: p.observaciones,
+        requiere_subsidio: p.requiere_subsidio,
+        referido_colegio: p.referido_colegio,
+        ts_canalizado: p.ts_canalizado,
+        estado: p.estado,
+        tratamientos: tratamientosFinal,
+        familia_id: familiaId,
+        creado_en: new Date().toISOString(),
+      };
+      PACIENTES.push(pac);
+
+      // Si era el responsable de la familia y la familia no tiene responsable
+      if (p._esResponsable && familiaId) {
+        const fam = FAMILIAS.find(f => f.id === familiaId);
+        if (fam && !fam.responsable_id) {
+          fam.responsable_id = id;
+          fam.responsable_nombre = p.nombre_completo;
+          familiasAfectadas.add(familiaId);
+        }
+      }
+
+      guardarPacientes();
+      await fbGuardarPaciente(pac);
+      hechos++;
+      setProgress(`Paciente ${i}/${r.pacientesNuevos.length}: ${p.nombre_completo}`);
+    }
+
+    // Sincronizar familias modificadas (responsable asignado)
+    if (familiasAfectadas.size > 0) {
+      setProgress(`Actualizando responsables de ${familiasAfectadas.size} familias...`);
+      guardarFamilias();
+      for (const famId of familiasAfectadas) {
+        const fam = FAMILIAS.find(f => f.id === famId);
+        if (fam) await fbGuardarFamilia(fam);
       }
     }
-  });
-  guardarPacientes();
-  guardarFamilias();
 
-  // Reset y mensaje
-  RESULTADO_IMPORT_PENDIENTE = null;
-  document.getElementById("excelFile").value = '';
-  alert(`✓ Importación completada\n\n• ${r.profesionalesNuevos.length} profesionales nuevos\n• ${r.familiasNuevas.length} familias nuevas\n• ${r.pacientesNuevos.length} pacientes nuevos\n\nTotales actuales:\n• ${PROFESIONALES.length} profesionales\n• ${FAMILIAS.length} familias\n• ${PACIENTES.length} pacientes`);
-  renderConfiguracion();
+    // Cierre
+    document.getElementById("importMsg").textContent = "✓ Importación completada";
+    document.getElementById("importProgressBar").style.width = "100%";
+    document.getElementById("importPct").textContent = `${total} / ${total} (100%)`;
+
+    setTimeout(() => {
+      overlay.remove();
+      RESULTADO_IMPORT_PENDIENTE = null;
+      const fileInput = document.getElementById("excelFile");
+      if (fileInput) fileInput.value = '';
+      alert(`✓ Importación completada\n\n• ${r.profesionalesNuevos.length} profesionales nuevos\n• ${r.familiasNuevas.length} familias nuevas\n• ${r.pacientesNuevos.length} pacientes nuevos\n\nTodo subido a Firebase ✨\n\nTotales actuales:\n• ${PROFESIONALES.length} profesionales\n• ${FAMILIAS.length} familias\n• ${PACIENTES.length} pacientes`);
+      renderConfiguracion();
+    }, 800);
+
+  } catch (e) {
+    console.error("[confirmarImport] Error:", e);
+    document.getElementById("importMsg").innerHTML = `<span style="color:var(--rojo)">⚠️ Error: ${e.message || "Error desconocido"}</span><br><small>Lo que ya se subió quedó guardado. Puedes reintentar.</small>`;
+    setTimeout(() => overlay.remove(), 5000);
+  }
 }
 
 // ============================================================
@@ -6028,8 +6148,22 @@ function renderCuentas() {
   const hoy = new Date();
   const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
   const movimientosMes = MOVIMIENTOS.filter(m => new Date(m.fecha) >= inicioMes);
-  const entradaMes = movimientosMes.filter(m => m.tipo === "entrada").reduce((s, m) => s + m.monto, 0);
-  const salidaMes = movimientosMes.filter(m => m.tipo === "salida").reduce((s, m) => s + m.monto, 0);
+
+  // Helper: convertir un movimiento a USD según moneda de su cuenta
+  // Si es USD, deja como está. Si es Bs, divide entre tasa P2P (fallback BCV)
+  const tasaParaConvertir = TASAS.p2p > 0 ? TASAS.p2p : (TASAS.bcv > 0 ? TASAS.bcv : 0);
+  const movToUSD = (m) => {
+    const cuenta = CUENTAS.find(c => c.id === m.cuenta_id);
+    if (!cuenta) return m.monto || 0;
+    if (cuenta.moneda === "USD") return m.monto || 0;
+    if (cuenta.moneda === "Bs") {
+      if (tasaParaConvertir > 0) return (m.monto || 0) / tasaParaConvertir;
+      return 0; // sin tasa, no podemos convertir
+    }
+    return m.monto || 0;
+  };
+  const entradaMes = movimientosMes.filter(m => m.tipo === "entrada").reduce((s, m) => s + movToUSD(m), 0);
+  const salidaMes = movimientosMes.filter(m => m.tipo === "salida").reduce((s, m) => s + movToUSD(m), 0);
 
   document.getElementById("view-cuentas").innerHTML = `
     <div class="header-row">
@@ -6080,12 +6214,12 @@ function renderCuentas() {
       <div class="kpi-card green">
         <div class="kpi-header"><div class="kpi-label">Entradas del mes</div></div>
         <div class="kpi-value green">${ui.formatMoney(entradaMes)}</div>
-        <div class="kpi-foot">Donaciones y otros</div>
+        <div class="kpi-foot">Donaciones y otros${tasaParaConvertir > 0 ? ' · Bs convertidos a USD con tasa P2P' : ''}</div>
       </div>
       <div class="kpi-card red">
         <div class="kpi-header"><div class="kpi-label">Salidas del mes</div></div>
         <div class="kpi-value red">${ui.formatMoney(salidaMes)}</div>
-        <div class="kpi-foot">Honorarios y pagos</div>
+        <div class="kpi-foot">Honorarios y pagos${tasaParaConvertir > 0 ? ' · Bs convertidos a USD con tasa P2P' : ''}</div>
       </div>
     </div>
 
