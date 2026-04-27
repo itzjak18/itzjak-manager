@@ -844,7 +844,7 @@ const STORAGE_KEYS = {
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v11.2-fix-cierre";
+const VERSION_ACTUAL = "v11.3-edicion-movimientos";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -1264,6 +1264,208 @@ async function registrarMovimiento({ cuenta_id, tipo, monto, concepto, categoria
   return mov;
 }
 
+// ============================================================
+// EDITAR / BORRAR MOVIMIENTOS Y DONACIONES
+// ============================================================
+
+function modalEditarMovimiento(movId) {
+  const m = MOVIMIENTOS.find(x => x.id === movId);
+  if (!m) { alert("Movimiento no encontrado"); return; }
+  const cuenta = CUENTAS.find(c => c.id === m.cuenta_id);
+  const monedaCuenta = cuenta?.moneda || "USD";
+  const fechaIso = (m.fecha instanceof Date ? m.fecha : new Date(m.fecha)).toISOString().slice(0, 10);
+
+  // Si viene de una donación, advertir
+  const donVinculada = m.ref_tipo === "donacion" ? DONACIONES.find(d => d.id === m.ref_id) : null;
+  const honoVinculado = m.ref_tipo === "honorario";
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">${m.tipo === 'entrada' ? '+$' : '-$'}</span>
+        <div>
+          <div class="name">Editar movimiento</div>
+          <div class="meta">${cuenta?.nombre || '—'} · ${m.tipo === 'entrada' ? 'Entrada' : 'Salida'}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      ${donVinculada ? `
+        <div class="alert-card info" style="margin-bottom:16px;font-size:12px">
+          ⚠️ Este movimiento viene de una <strong>donación</strong> de "${donVinculada.donante}".
+          Si modificas el monto aquí, la donación NO se actualiza automáticamente. Para edición completa, borra y vuelve a crear la donación.
+        </div>
+      ` : ''}
+      ${honoVinculado ? `
+        <div class="alert-card info" style="margin-bottom:16px;font-size:12px">
+          ⚠️ Este movimiento es de <strong>liquidación de honorarios</strong>. Si lo borras, las sesiones pagadas se marcarán nuevamente como pendientes.
+        </div>
+      ` : ''}
+
+      <div class="form-group">
+        <label>Concepto *</label>
+        <input type="text" id="em_concepto" value="${(m.concepto || '').replace(/"/g, '&quot;')}">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Fecha *</label>
+          <input type="date" id="em_fecha" value="${fechaIso}">
+        </div>
+        <div class="form-group">
+          <label>Monto (en ${monedaCuenta}) *</label>
+          <input type="number" id="em_monto" value="${m.monto}" step="0.01" min="0">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Categoría</label>
+        <input type="text" id="em_categoria" value="${(m.categoria || '').replace(/"/g, '&quot;')}">
+      </div>
+      <div class="form-group">
+        <label>Referencia</label>
+        <input type="text" id="em_referencia" value="${(m.referencia || '').replace(/"/g, '&quot;')}">
+      </div>
+      <div class="form-group">
+        <label>Notas</label>
+        <textarea id="em_notas" rows="2">${m.notas || ''}</textarea>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-primary" onclick="guardarEdicionMovimiento(${m.id})">Guardar</button>
+    </div>
+  `);
+}
+
+async function guardarEdicionMovimiento(movId) {
+  const m = MOVIMIENTOS.find(x => x.id === movId);
+  if (!m) return;
+
+  const concepto = document.getElementById("em_concepto").value.trim();
+  const fecha = document.getElementById("em_fecha").value;
+  const monto = parseFloat(document.getElementById("em_monto").value);
+  const categoria = document.getElementById("em_categoria").value.trim();
+  const referencia = document.getElementById("em_referencia").value.trim();
+  const notas = document.getElementById("em_notas").value.trim();
+
+  if (!concepto || !fecha || !monto || monto <= 0) {
+    alert("Completa concepto, fecha y monto válido");
+    return;
+  }
+
+  m.concepto = concepto;
+  m.fecha = new Date(fecha + 'T12:00:00').toISOString();
+  m.monto = monto;
+  m.categoria = categoria;
+  m.referencia = referencia;
+  m.notas = notas;
+
+  guardarMovimientos();
+  await fbGuardarMovimiento(m);
+
+  cerrarModal();
+  // Refrescar la vista actual
+  const activeView = document.querySelector(".nav-item.active")?.dataset.view;
+  if (activeView) cambiarVista(activeView);
+}
+
+async function confirmarBorrarMovimiento(movId) {
+  const m = MOVIMIENTOS.find(x => x.id === movId);
+  if (!m) return;
+
+  const cuenta = CUENTAS.find(c => c.id === m.cuenta_id);
+  const formatM = cuenta?.moneda === 'Bs'
+    ? `Bs ${m.monto.toLocaleString("es-VE", {maximumFractionDigits:0})}`
+    : ui.formatMoney(m.monto);
+
+  let mensaje = `¿Borrar este movimiento?\n\n• Concepto: ${m.concepto}\n• Monto: ${m.tipo === 'entrada' ? '+' : '-'}${formatM}\n• Cuenta: ${cuenta?.nombre || '—'}`;
+
+  // Si está vinculado a una donación
+  const donVinculada = m.ref_tipo === "donacion" ? DONACIONES.find(d => d.id === m.ref_id) : null;
+  if (donVinculada) {
+    mensaje += `\n\n⚠️ Este movimiento está vinculado a la donación de "${donVinculada.donante}".\nLa donación TAMBIÉN será borrada.`;
+  }
+
+  // Si está vinculado a honorarios
+  const sesionesAfectadas = m.ref_tipo === "honorario"
+    ? SESIONES.filter(s => s.profesional_id === m.ref_id && s.estado_pago_itzjak === "pagado" && (
+        s.fecha_pago && Math.abs(new Date(s.fecha_pago) - new Date(m.fecha)) < 86400000
+      ))
+    : [];
+  if (sesionesAfectadas.length > 0) {
+    mensaje += `\n\n⚠️ Este movimiento es de pago de honorarios. ${sesionesAfectadas.length} sesiones volverán a marcarse como "pendiente de pago".`;
+  }
+
+  if (!confirm(mensaje)) return;
+
+  try {
+    // Borrar movimiento
+    MOVIMIENTOS = MOVIMIENTOS.filter(x => x.id !== movId);
+    guardarMovimientos();
+    await fbBorrarMovimiento(movId);
+
+    // Si tiene donación vinculada, borrarla también
+    if (donVinculada) {
+      DONACIONES = DONACIONES.filter(d => d.id !== donVinculada.id);
+      guardarDonaciones();
+      await fbBorrarDonacion(donVinculada.id);
+    }
+
+    // Si tiene sesiones de honorarios, devolverlas a pendiente
+    if (sesionesAfectadas.length > 0) {
+      for (const s of sesionesAfectadas) {
+        s.estado_pago_itzjak = "pendiente";
+        s.fecha_pago = null;
+        s.metodo_pago = null;
+        s.referencia_pago = null;
+        s.notas_pago = null;
+        s.cuenta_id = null;
+        await fbGuardarSesion(s);
+      }
+      guardarSesiones();
+    }
+
+    cerrarModal();
+    const activeView = document.querySelector(".nav-item.active")?.dataset.view;
+    if (activeView) cambiarVista(activeView);
+  } catch (e) {
+    console.error("[confirmarBorrarMovimiento] Error:", e);
+    alert("Error al borrar: " + (e.message || "desconocido"));
+  }
+}
+
+async function confirmarBorrarDonacion(donId) {
+  const d = DONACIONES.find(x => x.id === donId);
+  if (!d) return;
+
+  const cuenta = CUENTAS.find(c => c.id === d.cuenta_id);
+  const formatM = cuenta?.moneda === 'Bs'
+    ? `Bs ${(d.monto||0).toLocaleString("es-VE", {maximumFractionDigits:0})}`
+    : ui.formatMoney(d.monto);
+
+  if (!confirm(`¿Borrar la donación de "${d.donante}" por ${formatM}?\n\nEl movimiento asociado en la cuenta también se borrará.`)) return;
+
+  try {
+    // Borrar donación
+    DONACIONES = DONACIONES.filter(x => x.id !== donId);
+    guardarDonaciones();
+    await fbBorrarDonacion(donId);
+
+    // Borrar movimiento asociado
+    const movsAsociados = MOVIMIENTOS.filter(m => m.ref_tipo === "donacion" && m.ref_id === donId);
+    for (const m of movsAsociados) {
+      MOVIMIENTOS = MOVIMIENTOS.filter(x => x.id !== m.id);
+      await fbBorrarMovimiento(m.id);
+    }
+    guardarMovimientos();
+
+    renderDonaciones();
+  } catch (e) {
+    console.error("[confirmarBorrarDonacion] Error:", e);
+    alert("Error al borrar: " + (e.message || "desconocido"));
+  }
+}
+
 // === Helper: obtener cuenta por nombre/método ===
 function cuentaPorMetodo(metodo) {
   // Busca cuenta predeterminada por tipo
@@ -1281,6 +1483,45 @@ function balanceDeCuenta(cuentaId) {
 function nuevoId(coleccion) {
   if (!coleccion.length) return 1;
   return Math.max(...coleccion.map(x => x.id || 0)) + 1;
+}
+
+// Resincronizar: borra el caché local y vuelve a bajar todo desde Firebase
+async function resincronizarDesdeFirebase() {
+  if (!confirm("Esto recargará todos los datos desde Firebase, descartando la caché local.\n\nNo borra nada en la nube. ¿Continuar?")) return;
+
+  // Mostrar overlay
+  const overlay = document.createElement("div");
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center";
+  overlay.innerHTML = `
+    <div style="background:white;padding:30px 40px;border-radius:12px;text-align:center;max-width:380px">
+      <h3 style="margin:0 0 12px">🔄 Recargando desde Firebase</h3>
+      <p style="color:var(--gris-600);margin:0;font-size:14px">Bajando datos limpios...</p>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  try {
+    // Borrar caché local de datos (no la sesión)
+    const claves = ["pacientes", "familias", "profesionales", "sesiones", "donaciones", "cuentas", "movimientos", "tasas"];
+    claves.forEach(k => {
+      if (STORAGE_KEYS[k]) localStorage.removeItem(STORAGE_KEYS[k]);
+    });
+
+    // Resetear arrays en memoria
+    PACIENTES = []; FAMILIAS = []; PROFESIONALES = [];
+    SESIONES = []; DONACIONES = []; MOVIMIENTOS = [];
+
+    // Bajar desde Firebase
+    await fbSincronizarDatos();
+
+    overlay.remove();
+    alert("✓ Datos recargados desde Firebase");
+    location.reload();
+  } catch (e) {
+    console.error("[resincronizar]", e);
+    overlay.remove();
+    alert("Error al resincronizar: " + (e.message || "desconocido"));
+  }
 }
 
 // Reset para limpiar todos los datos (botón de emergencia)
@@ -5221,6 +5462,16 @@ function renderConfiguracion() {
         </button>
       </div>
 
+      <div style="background:white;border:1px solid var(--gris-200);border-radius:14px;padding:24px;border-left:4px solid var(--azul)">
+        <h2 style="margin-bottom:8px">🔄 Resincronizar desde Firebase</h2>
+        <p style="color:var(--gris-500);font-size:13px;margin-bottom:16px">
+          Si los datos en este navegador no coinciden con los de Firebase (por ejemplo, si borraste algo desde Firebase Console), usa este botón para forzar una recarga limpia.
+        </p>
+        <button class="btn-secondary btn-full" onclick="resincronizarDesdeFirebase()" style="color:var(--azul);border-color:var(--azul)">
+          🔄 Recargar datos desde Firebase
+        </button>
+      </div>
+
       <div style="background:white;border:1px solid var(--gris-200);border-radius:14px;padding:24px;border-left:4px solid var(--rojo)">
         <h2 style="margin-bottom:8px">Resetear todos los datos</h2>
         <p style="color:var(--gris-500);font-size:13px;margin-bottom:16px">
@@ -6411,7 +6662,7 @@ function verCuenta(cuentaId) {
       ${movs.length === 0 ? '<div class="empty-state">Sin movimientos en esta cuenta</div>' : `
         <div class="card">
           <table>
-            <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th class="right">Monto</th><th class="right">Saldo</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th class="right">Monto</th><th class="right">Saldo</th><th></th></tr></thead>
             <tbody>
               ${movsConSaldo.map(m => `
                 <tr>
@@ -6425,6 +6676,10 @@ function verCuenta(cuentaId) {
                     ${m.tipo === 'entrada' ? '+' : '−'}${formatN(m.monto)}
                   </td>
                   <td class="right" style="font-weight:600;color:var(--gris-600)">${formatN(m.saldoDespues)}</td>
+                  <td class="right" style="white-space:nowrap">
+                    <button class="btn-secondary btn-sm" style="padding:4px 8px;font-size:11px" onclick="event.stopPropagation();modalEditarMovimiento(${m.id})" title="Editar">✏️</button>
+                    <button class="btn-secondary btn-sm" style="padding:4px 8px;font-size:11px;color:var(--rojo)" onclick="event.stopPropagation();confirmarBorrarMovimiento(${m.id})" title="Borrar">🗑️</button>
+                  </td>
                 </tr>
               `).join("")}
             </tbody>
@@ -6632,11 +6887,12 @@ function renderPagos() {
 
     <div class="card">
       <table>
-        <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Cuenta</th><th>Beneficiario</th><th class="right">Monto</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Cuenta</th><th>Beneficiario</th><th class="right">Monto</th><th></th></tr></thead>
         <tbody>
-          ${pagosExtra.length === 0 ? '<tr><td colspan="6" class="empty-state">Aún no hay pagos registrados.<br>Click "+ Nuevo pago" para registrar el primero.</td></tr>' :
+          ${pagosExtra.length === 0 ? '<tr><td colspan="7" class="empty-state">Aún no hay pagos registrados.<br>Click "+ Nuevo pago" para registrar el primero.</td></tr>' :
             pagosExtra.map(m => {
               const c = CUENTAS.find(x => x.id === m.cuenta_id);
+              const formatM = c?.moneda === 'Bs' ? `Bs ${m.monto.toLocaleString("es-VE", {maximumFractionDigits:0})}` : ui.formatMoney(m.monto);
               return `
                 <tr>
                   <td>${ui.formatDate(m.fecha)}</td>
@@ -6647,7 +6903,11 @@ function renderPagos() {
                   <td><span class="badge" style="background:var(--gris-100);color:var(--gris-700)">${m.categoria || '—'}</span></td>
                   <td>${c ? c.nombre : '—'}</td>
                   <td>${m.notas || '—'}</td>
-                  <td class="right" style="font-weight:700;color:var(--rojo)">−${ui.formatMoney(m.monto)}</td>
+                  <td class="right" style="font-weight:700;color:var(--rojo)">−${formatM}</td>
+                  <td class="right" style="white-space:nowrap">
+                    <button class="btn-secondary btn-sm" style="padding:4px 8px;font-size:11px" onclick="modalEditarMovimiento(${m.id})" title="Editar">✏️</button>
+                    <button class="btn-secondary btn-sm" style="padding:4px 8px;font-size:11px;color:var(--rojo)" onclick="confirmarBorrarMovimiento(${m.id})" title="Borrar">🗑️</button>
+                  </td>
                 </tr>
               `;
             }).join("")}
@@ -7045,23 +7305,30 @@ function renderDonaciones() {
 
     <div class="card">
       <table>
-        <thead><tr><th>Fecha</th><th>Donante</th><th>Método</th><th>Referencia</th><th>Notas</th><th>Monto</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Donante</th><th>Método</th><th>Referencia</th><th>Notas</th><th class="right">Monto</th><th></th></tr></thead>
         <tbody>
-          ${DONACIONES.sort((a,b) => b.fecha - a.fecha).map(d => `
-            <tr>
-              <td>${ui.formatDate(d.fecha)}</td>
-              <td>
-                <div class="id-cell">
-                  <span class="code-tag">DN</span>
-                  <strong>${d.donante}</strong>
-                </div>
-              </td>
-              <td>${ui.badgeMetodo(d.metodo)}</td>
-              <td>${d.referencia || '—'}</td>
-              <td><small style="color:var(--gris-500)">${d.notas || '—'}</small></td>
-              <td class="right" style="font-weight:700;color:var(--verde)">${ui.formatMoney(d.monto)}</td>
-            </tr>
-          `).join("")}
+          ${DONACIONES.sort((a,b) => new Date(b.fecha) - new Date(a.fecha)).map(d => {
+            const cuenta = CUENTAS.find(c => c.id === d.cuenta_id);
+            const formatM = cuenta?.moneda === 'Bs' ? `Bs ${(d.monto||0).toLocaleString("es-VE", {maximumFractionDigits:0})}` : ui.formatMoney(d.monto);
+            return `
+              <tr>
+                <td>${ui.formatDate(d.fecha)}</td>
+                <td>
+                  <div class="id-cell">
+                    <span class="code-tag">DN</span>
+                    <strong>${d.donante}</strong>
+                  </div>
+                </td>
+                <td>${ui.badgeMetodo(d.metodo)}</td>
+                <td>${d.referencia || '—'}</td>
+                <td><small style="color:var(--gris-500)">${d.notas || '—'}</small></td>
+                <td class="right" style="font-weight:700;color:var(--verde)">${formatM}</td>
+                <td class="right" style="white-space:nowrap">
+                  <button class="btn-secondary btn-sm" style="padding:4px 8px;font-size:11px;color:var(--rojo)" onclick="confirmarBorrarDonacion(${d.id})" title="Borrar">🗑️</button>
+                </td>
+              </tr>
+            `;
+          }).join("")}
         </tbody>
       </table>
     </div>
