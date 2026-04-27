@@ -844,7 +844,7 @@ const STORAGE_KEYS = {
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v7.0-firebase-auth";
+const VERSION_ACTUAL = "v8.0-firebase-usuarios";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -1231,6 +1231,150 @@ function tienePermiso(usuario, modulo) {
   return (usuario.permisos || []).includes(modulo);
 }
 
+// ============================================================
+// SERVICIO FIRESTORE - Usuarios e Invitaciones
+// ============================================================
+
+async function fbEsperarListo() {
+  if (window.fb) return true;
+  return new Promise(resolve => {
+    window.addEventListener("firebase-ready", () => resolve(true), { once: true });
+    setTimeout(() => resolve(false), 5000); // timeout 5s
+  });
+}
+
+// === USUARIOS ===
+async function fbCargarUsuarios() {
+  await fbEsperarListo();
+  if (!window.fb) return [];
+  try {
+    const snap = await window.fb.getDocs(window.fb.collection(window.fb.db, "usuarios"));
+    const lista = [];
+    snap.forEach(docSnap => {
+      const data = docSnap.data();
+      lista.push({
+        id: docSnap.id,
+        uid: docSnap.id,
+        usuario: data.usuario || data.email,
+        email: data.email,
+        nombre: data.nombre,
+        rol: data.rol || "Empleado",
+        permisos: data.permisos || [],
+        activo: data.activo !== false,
+        creado_en: data.creado_en,
+      });
+    });
+    return lista;
+  } catch (e) {
+    console.error("[fbCargarUsuarios] Error:", e);
+    return [];
+  }
+}
+
+async function fbGuardarUsuario(usuario) {
+  await fbEsperarListo();
+  if (!window.fb) throw new Error("Firebase no inicializado");
+  const ref = window.fb.doc(window.fb.db, "usuarios", usuario.id);
+  await window.fb.setDoc(ref, {
+    usuario: usuario.usuario,
+    email: usuario.email,
+    nombre: usuario.nombre,
+    rol: usuario.rol || "Empleado",
+    permisos: usuario.permisos || [],
+    activo: usuario.activo !== false,
+    creado_en: usuario.creado_en || new Date().toISOString(),
+  }, { merge: true });
+}
+
+async function fbActualizarUsuario(uid, cambios) {
+  await fbEsperarListo();
+  if (!window.fb) throw new Error("Firebase no inicializado");
+  const ref = window.fb.doc(window.fb.db, "usuarios", uid);
+  await window.fb.updateDoc(ref, cambios);
+}
+
+async function fbBorrarUsuario(uid) {
+  await fbEsperarListo();
+  if (!window.fb) throw new Error("Firebase no inicializado");
+  const ref = window.fb.doc(window.fb.db, "usuarios", uid);
+  await window.fb.deleteDoc(ref);
+}
+
+// === INVITACIONES ===
+async function fbCargarInvitaciones() {
+  await fbEsperarListo();
+  if (!window.fb) return [];
+  try {
+    const snap = await window.fb.getDocs(window.fb.collection(window.fb.db, "invitaciones"));
+    const lista = [];
+    snap.forEach(docSnap => {
+      const data = docSnap.data();
+      lista.push({
+        ...data,
+        id: docSnap.id,
+        token: data.token || docSnap.id,
+      });
+    });
+    return lista;
+  } catch (e) {
+    console.error("[fbCargarInvitaciones] Error:", e);
+    return [];
+  }
+}
+
+async function fbCrearInvitacion(invitacion) {
+  await fbEsperarListo();
+  if (!window.fb) throw new Error("Firebase no inicializado");
+  // Usar el token como ID del documento para que sea fácil consultarla con el link
+  const ref = window.fb.doc(window.fb.db, "invitaciones", invitacion.token);
+  await window.fb.setDoc(ref, {
+    token: invitacion.token,
+    email: invitacion.email,
+    rol: invitacion.rol || "Empleado",
+    permisos: invitacion.permisos || [],
+    invitado_por_id: invitacion.invitado_por_id,
+    invitado_por_nombre: invitacion.invitado_por_nombre,
+    creada_en: invitacion.creada_en || new Date().toISOString(),
+    usada: false,
+  });
+}
+
+async function fbActualizarInvitacion(token, cambios) {
+  await fbEsperarListo();
+  if (!window.fb) throw new Error("Firebase no inicializado");
+  const ref = window.fb.doc(window.fb.db, "invitaciones", token);
+  await window.fb.updateDoc(ref, cambios);
+}
+
+async function fbBorrarInvitacion(token) {
+  await fbEsperarListo();
+  if (!window.fb) throw new Error("Firebase no inicializado");
+  const ref = window.fb.doc(window.fb.db, "invitaciones", token);
+  await window.fb.deleteDoc(ref);
+}
+
+async function fbObtenerInvitacion(token) {
+  await fbEsperarListo();
+  if (!window.fb) throw new Error("Firebase no inicializado");
+  const ref = window.fb.doc(window.fb.db, "invitaciones", token);
+  const snap = await window.fb.getDoc(ref);
+  if (!snap.exists()) return null;
+  return { ...snap.data(), id: snap.id, token: snap.data().token || snap.id };
+}
+
+// === Sincronizar caché local desde Firestore ===
+async function fbSincronizarUsuariosEInvitaciones() {
+  try {
+    USUARIOS = await fbCargarUsuarios();
+    INVITACIONES = await fbCargarInvitaciones();
+    // Persistir caché en localStorage para arranque rápido la próxima vez
+    guardar(STORAGE_KEYS.usuarios, USUARIOS);
+    guardar(STORAGE_KEYS.invitaciones, INVITACIONES);
+  } catch (e) {
+    console.error("[fbSincronizar] Error:", e);
+  }
+}
+
 async function olvideClave() {
   const email = (document.getElementById("loginUser").value || "").trim();
   if (!email || !email.includes("@")) {
@@ -1319,7 +1463,9 @@ async function intentarLogin() {
       activo: userData.activo !== false,
     };
 
-    // También guardar en USUARIOS local (para compatibilidad con código existente)
+    // Sincronizar lista de usuarios e invitaciones desde Firestore
+    await fbSincronizarUsuariosEInvitaciones();
+    // Asegurar que el usuario actual está en la caché
     if (!USUARIOS.find(u => u.id === USUARIO_ACTUAL.id)) {
       USUARIOS.push(USUARIO_ACTUAL);
       guardarUsuarios();
@@ -1504,6 +1650,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 permisos: userData.permisos || [],
                 activo: true,
               };
+              // Sincronizar lista de usuarios e invitaciones
+              await fbSincronizarUsuariosEInvitaciones();
               if (!USUARIOS.find(u => u.id === USUARIO_ACTUAL.id)) {
                 USUARIOS.push(USUARIO_ACTUAL);
                 guardarUsuarios();
@@ -1526,15 +1674,36 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // === Mostrar pantalla de invitación ===
-function mostrarPantallaInvitacion(token) {
-  const inv = INVITACIONES.find(i => i.token === token && !i.usada);
+async function mostrarPantallaInvitacion(token) {
   document.getElementById("loginScreen").style.display = "none";
   const screen = document.getElementById("inviteScreen");
   screen.style.display = "flex";
 
+  // Mostrar estado de carga
+  document.getElementById("inviteSubtitle").textContent = "Verificando invitación...";
+
+  // Esperar Firebase y consultar Firestore
+  await fbEsperarListo();
+  let inv = null;
+  if (window.fb) {
+    try {
+      inv = await fbObtenerInvitacion(token);
+    } catch (e) {
+      console.error("[mostrarPantallaInvitacion] Error:", e);
+    }
+  }
+
+  // Si no la encontramos en Firestore, intentar en cache local (compatibilidad)
   if (!inv) {
+    inv = INVITACIONES.find(i => i.token === token);
+  }
+
+  if (!inv || inv.usada) {
     document.getElementById("inviteForm").style.display = "none";
     document.getElementById("inviteInvalid").style.display = "block";
+    document.getElementById("inviteInvalidMsg").textContent = inv && inv.usada
+      ? "Esta invitación ya fue usada. Si tienes una cuenta, inicia sesión normalmente."
+      : "Este enlace de invitación no es válido o ya expiró.";
     return;
   }
 
@@ -1548,26 +1717,45 @@ function mostrarPantallaInvitacion(token) {
     return;
   }
 
-  // Verificar que el email no esté ya en uso
-  const yaExiste = USUARIOS.find(u => (u.email || "").toLowerCase() === (inv.email || "").toLowerCase());
-  if (yaExiste) {
-    document.getElementById("inviteForm").style.display = "none";
-    document.getElementById("inviteInvalid").style.display = "block";
-    document.getElementById("inviteInvalidMsg").textContent = "Ya existe una cuenta con este email. Por favor inicia sesión normalmente.";
+  // Llenar el email
+  document.getElementById("invEmail").value = inv.email;
+  document.getElementById("inviteSubtitle").textContent = `${inv.invitado_por_nombre || 'El administrador'} te ha invitado a Itzjak. Completa tus datos para crear tu cuenta.`;
+}
+
+async function aceptarInvitacion() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("invite");
+  const err = document.getElementById("inviteError");
+
+  // Verificar Firebase está listo
+  if (!window.fb) {
+    err.textContent = "Conectando... espera un momento";
+    await fbEsperarListo();
+    if (!window.fb) {
+      err.textContent = "No se pudo conectar a Firebase. Revisa tu conexión.";
+      return;
+    }
+  }
+
+  // Buscar invitación en Firestore
+  let inv;
+  try {
+    inv = await fbObtenerInvitacion(token);
+  } catch (e) {
+    err.textContent = "Error al verificar la invitación";
+    console.error("[aceptarInvitacion] Error:", e);
     return;
   }
 
-  // Llenar el email
-  document.getElementById("invEmail").value = inv.email;
-  document.getElementById("inviteSubtitle").textContent = `${inv.invitado_por_nombre} te ha invitado a Itzjak. Completa tus datos para crear tu cuenta.`;
-}
+  if (!inv || inv.usada) {
+    err.textContent = "Invitación inválida o ya fue usada";
+    return;
+  }
 
-function aceptarInvitacion() {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get("invite");
-  const inv = INVITACIONES.find(i => i.token === token && !i.usada);
-  if (!inv) {
-    document.getElementById("inviteError").textContent = "Invitación inválida";
+  // Verificar expiración (7 días)
+  const exp = new Date(inv.creada_en).getTime() + 7 * 24 * 60 * 60 * 1000;
+  if (Date.now() > exp) {
+    err.textContent = "Esta invitación ha expirado. Pide al administrador una nueva.";
     return;
   }
 
@@ -1575,42 +1763,89 @@ function aceptarInvitacion() {
   const email = document.getElementById("invEmail").value.trim().toLowerCase();
   const clave = document.getElementById("invClave").value;
   const clave2 = document.getElementById("invClave2").value;
-  const err = document.getElementById("inviteError");
 
   if (!nombre) { err.textContent = "Pon tu nombre completo"; return; }
   if (!clave || clave.length < 6) { err.textContent = "La clave debe tener mínimo 6 caracteres"; return; }
   if (clave !== clave2) { err.textContent = "Las claves no coinciden"; return; }
 
-  // Crear el usuario
-  const nuevoUsuario = {
-    id: nuevoId(USUARIOS),
-    usuario: email, // por defecto, usuario = email
-    nombre,
-    email,
-    clave,
-    rol: inv.rol || "Empleado",
-    permisos: inv.permisos || ["dashboard"],
-    activo: true,
-    creado_en: new Date().toISOString(),
-    invitado_por: inv.invitado_por_id,
-  };
-  USUARIOS.push(nuevoUsuario);
-  guardarUsuarios();
+  // Mostrar estado de carga
+  const btn = document.querySelector('button[onclick="aceptarInvitacion()"]');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Creando tu cuenta...";
+  }
+  err.textContent = "";
 
-  // Marcar invitación como usada
-  inv.usada = true;
-  inv.usuario_creado_id = nuevoUsuario.id;
-  inv.aceptada_en = new Date().toISOString();
-  guardarInvitaciones();
+  let firebaseUser;
+  try {
+    // 1. Crear cuenta en Firebase Authentication
+    const cred = await window.fb.createUserWithEmailAndPassword(email, clave);
+    firebaseUser = cred.user;
+  } catch (e) {
+    console.error("[aceptarInvitacion] Auth error:", e);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Crear mi cuenta";
+    }
+    if (e.code === "auth/email-already-in-use") {
+      err.textContent = "Ya existe una cuenta con este email. Inicia sesión normalmente.";
+    } else if (e.code === "auth/weak-password") {
+      err.textContent = "La clave es muy débil. Usa al menos 6 caracteres.";
+    } else if (e.code === "auth/invalid-email") {
+      err.textContent = "Email inválido.";
+    } else {
+      err.textContent = "Error al crear cuenta: " + (e.message || "Error desconocido");
+    }
+    return;
+  }
 
-  // Auto-login
-  USUARIO_ACTUAL = nuevoUsuario;
-  guardar(STORAGE_KEYS.sesion_actual, { usuario_id: nuevoUsuario.id, ts: Date.now() });
+  try {
+    // 2. Crear documento en colección "usuarios" de Firestore
+    const nuevoUsuario = {
+      id: firebaseUser.uid,
+      uid: firebaseUser.uid,
+      usuario: email,
+      nombre,
+      email,
+      rol: inv.rol || "Empleado",
+      permisos: inv.permisos || ["dashboard"],
+      activo: true,
+      creado_en: new Date().toISOString(),
+    };
+    await fbGuardarUsuario(nuevoUsuario);
 
-  // Limpiar URL y entrar
-  window.history.replaceState({}, '', window.location.pathname);
-  document.getElementById("inviteScreen").style.display = "none";
-  entrar();
+    // 3. Marcar invitación como usada
+    await fbActualizarInvitacion(token, {
+      usada: true,
+      usuario_creado_id: firebaseUser.uid,
+      aceptada_en: new Date().toISOString(),
+    });
+
+    // 4. Actualizar caché local
+    USUARIOS.push(nuevoUsuario);
+    guardarUsuarios();
+    inv.usada = true;
+    inv.usuario_creado_id = firebaseUser.uid;
+    inv.aceptada_en = new Date().toISOString();
+    const idx = INVITACIONES.findIndex(i => i.token === token);
+    if (idx >= 0) INVITACIONES[idx] = inv;
+    guardarInvitaciones();
+
+    // 5. Auto-login (Firebase ya tiene la sesión activa después de createUserWith...)
+    USUARIO_ACTUAL = nuevoUsuario;
+
+    // Limpiar URL y entrar
+    window.history.replaceState({}, '', window.location.pathname);
+    document.getElementById("inviteScreen").style.display = "none";
+    entrar();
+  } catch (e) {
+    console.error("[aceptarInvitacion] Firestore error:", e);
+    err.textContent = "Tu cuenta fue creada pero hubo un error al asignar permisos. Contacta al administrador.";
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Crear mi cuenta";
+    }
+  }
 }
 function cambiarVista(view) {
   // Verificar permiso
@@ -4170,7 +4405,7 @@ function seleccionarTodosPermisos(value) {
   });
 }
 
-function crearInvitacion() {
+async function crearInvitacion() {
   const email = (document.getElementById("ni_email").value || "").trim().toLowerCase();
   const rol = document.getElementById("ni_rol").value;
   if (!email || !email.includes("@")) { alert("Pon un email válido"); return; }
@@ -4202,8 +4437,29 @@ function crearInvitacion() {
     creada_en: new Date().toISOString(),
     usada: false,
   };
-  INVITACIONES.push(inv);
-  guardarInvitaciones();
+
+  // Mostrar estado de carga
+  const btnCrear = document.querySelector('button[onclick="crearInvitacion()"]');
+  if (btnCrear) {
+    btnCrear.disabled = true;
+    btnCrear.textContent = "Creando...";
+  }
+
+  try {
+    // Guardar en Firestore (fuente de verdad)
+    await fbCrearInvitacion(inv);
+    // También en cache local
+    INVITACIONES.push(inv);
+    guardarInvitaciones();
+  } catch (e) {
+    console.error("[crearInvitacion] Error:", e);
+    alert("Error al crear la invitación: " + (e.message || "Error desconocido"));
+    if (btnCrear) {
+      btnCrear.disabled = false;
+      btnCrear.textContent = "Generar invitación";
+    }
+    return;
+  }
 
   cerrarModal();
 
@@ -4274,13 +4530,19 @@ function copiarLinkInvitacion(token) {
   });
 }
 
-function cancelarInvitacion(token) {
+async function cancelarInvitacion(token) {
   const inv = INVITACIONES.find(i => i.token === token);
   if (!inv) return;
   if (!confirm(`¿Cancelar la invitación a "${inv.email}"?`)) return;
-  INVITACIONES = INVITACIONES.filter(i => i.token !== token);
-  guardarInvitaciones();
-  renderUsuarios();
+  try {
+    await fbBorrarInvitacion(token);
+    INVITACIONES = INVITACIONES.filter(i => i.token !== token);
+    guardarInvitaciones();
+    renderUsuarios();
+  } catch (e) {
+    console.error("[cancelarInvitacion] Error:", e);
+    alert("Error al cancelar: " + (e.message || "Error desconocido"));
+  }
 }
 
 // === Ver y editar usuario ===
@@ -4393,7 +4655,7 @@ function seleccionarTodosPermisosEdit(value) {
   });
 }
 
-function guardarEdicionUsuario(id) {
+async function guardarEdicionUsuario(id) {
   const u = USUARIOS.find(x => x.id === id);
   if (!u) return;
   const esYo = USUARIO_ACTUAL.id === id;
@@ -4410,9 +4672,9 @@ function guardarEdicionUsuario(id) {
   const otroConEmail = USUARIOS.find(x => x.id !== id && (x.email || "").toLowerCase() === email);
   if (otroConEmail) { alert("Ya hay otro usuario con ese email"); return; }
 
+  // Aplicar cambios al objeto local
   u.nombre = nombre;
   u.email = email;
-  if (claveNueva) u.clave = claveNueva;
   if (!esYo) {
     u.rol = document.getElementById("eu_rol").value;
     u.activo = document.getElementById("eu_activo").checked;
@@ -4426,8 +4688,28 @@ function guardarEdicionUsuario(id) {
     if (!u.permisos.includes("dashboard")) u.permisos.unshift("dashboard");
   }
 
+  // Guardar en Firestore
+  try {
+    await fbActualizarUsuario(u.id, {
+      nombre: u.nombre,
+      email: u.email,
+      rol: u.rol,
+      activo: u.activo,
+      permisos: u.permisos,
+      usuario: u.usuario || u.email,
+    });
+  } catch (e) {
+    console.error("[guardarEdicionUsuario] Error:", e);
+    alert("Error al guardar cambios: " + (e.message || "Error desconocido"));
+    return;
+  }
+
+  // Aviso sobre cambio de clave (Firebase Auth no permite cambio directo desde admin sin re-auth)
+  if (claveNueva) {
+    alert(`Nota: Para cambiar la clave de un usuario, debes hacerlo desde Firebase Console (Authentication → Users → Restablecer contraseña), o pedir al usuario que use "¿Olvidaste tu clave?" en el login.\n\nTus otros cambios sí se guardaron correctamente.`);
+  }
+
   guardarUsuarios();
-  // Si es el usuario actual, actualizar
   if (esYo) {
     USUARIO_ACTUAL = u;
     aplicarPermisosMenu();
@@ -4437,15 +4719,24 @@ function guardarEdicionUsuario(id) {
   renderUsuarios();
 }
 
-function confirmarBorrarUsuario(id) {
+async function confirmarBorrarUsuario(id) {
   const u = USUARIOS.find(x => x.id === id);
   if (!u) return;
-  if (u.usuario === "mish") { alert("No puedes eliminar al administrador principal"); return; }
-  if (!confirm(`¿Eliminar al usuario "${u.nombre}"? Esta acción no se puede deshacer.`)) return;
-  USUARIOS = USUARIOS.filter(x => x.id !== id);
-  guardarUsuarios();
-  cerrarModal();
-  renderUsuarios();
+  if (u.email === "mish@itzjak.com" || u.id === USUARIO_ACTUAL.id) {
+    alert("No puedes eliminar al administrador principal o a ti mismo"); return;
+  }
+  if (!confirm(`¿Eliminar al usuario "${u.nombre}"?\n\nNOTA: Esto borra su perfil en el sistema, pero su cuenta de Firebase Auth queda activa. Para eliminarla completamente debes borrarla también desde Firebase Console (Authentication → Users).`)) return;
+
+  try {
+    await fbBorrarUsuario(u.id);
+    USUARIOS = USUARIOS.filter(x => x.id !== id);
+    guardarUsuarios();
+    cerrarModal();
+    renderUsuarios();
+  } catch (e) {
+    console.error("[confirmarBorrarUsuario] Error:", e);
+    alert("Error al eliminar: " + (e.message || "Error desconocido"));
+  }
 }
 
 // ============================================================
