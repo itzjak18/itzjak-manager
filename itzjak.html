@@ -1510,11 +1510,21 @@ function renderDashboard() {
   }
   const max = Math.max(...meses.map(m => m.total), 1000);
 
+  // Saludo personalizado según el usuario
+  let saludoNombre = "Admin";
+  if (USUARIO_ACTUAL) {
+    if (USUARIO_ACTUAL.usuario === "mish") {
+      saludoNombre = "Te Amo MI VIDA";
+    } else {
+      saludoNombre = USUARIO_ACTUAL.nombre;
+    }
+  }
+
   document.getElementById("view-dashboard").innerHTML = `
     <div class="dashboard-hero">
       <div>
         <div class="label">Panel principal · ${hoy.toLocaleDateString("es-VE", {weekday:"long", day:"numeric", month:"long", year:"numeric"})}</div>
-        <h1>Hola, Admin</h1>
+        <h1>Hola, ${saludoNombre}</h1>
         <div class="subtitle">Resumen general · pacientes, sesiones y finanzas</div>
       </div>
       <div class="actions">
