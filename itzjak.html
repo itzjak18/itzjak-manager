@@ -140,6 +140,31 @@ body {
   outline: none; border-color: var(--azul);
 }
 
+/* Buscador con autocompletado */
+.searchable-select { position: relative; }
+.searchable-select input[type="text"] {
+  width: 100%; padding: 11px 14px; border: 1.5px solid var(--gris-200);
+  border-radius: 10px; font-size: 14px; font-family: inherit;
+  transition: border-color 0.15s;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 38px;
+}
+.searchable-select input[type="text"]:focus { border-color: var(--azul); outline: none; }
+.search-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  background: white; border: 1px solid var(--gris-200);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  max-height: 320px; overflow-y: auto; z-index: 1000;
+}
+.search-item {
+  padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--gris-100);
+  transition: background 0.1s;
+}
+.search-item:last-child { border-bottom: none; }
+.search-item:hover { background: var(--azul-bg); }
+
 button { cursor: pointer; font-family: inherit; border: none; font-size: 14px; font-weight: 600; transition: all 0.15s; }
 .btn-primary {
   background: var(--azul); color: white; padding: 12px 22px;
@@ -844,7 +869,7 @@ const STORAGE_KEYS = {
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v11.3-edicion-movimientos";
+const VERSION_ACTUAL = "v11.4-buscadores";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -4386,19 +4411,25 @@ function renderSesiones() {
     <div class="form-card-pro" style="max-width:700px">
       <div class="form-group">
         <label>Profesional *</label>
-        <select id="sesProf">
-          <option value="">— Selecciona un profesional —</option>
-          ${PROFESIONALES.filter(p => p.activo !== false).map(p =>
-            `<option value="${p.id}">${p.nombre} — ${p.especialidad} (${ui.formatMoney(p.honorario_sesion)}/sesión)</option>`
-          ).join("")}
-        </select>
+        <div class="searchable-select">
+          <input type="text" id="sesProfBusca" placeholder="Escribe para buscar... (nombre o especialidad)" autocomplete="off"
+                 oninput="buscarOpciones('sesProf','profesional',this.value)"
+                 onfocus="buscarOpciones('sesProf','profesional',this.value)"
+                 onblur="setTimeout(()=>cerrarBuscador('sesProf'),200)">
+          <input type="hidden" id="sesProf" value="">
+          <div class="search-dropdown" id="sesProfDropdown" style="display:none"></div>
+        </div>
       </div>
       <div class="form-group">
         <label>Paciente *</label>
-        <select id="sesPac">
-          <option value="">— Selecciona un paciente —</option>
-          ${PACIENTES.map(p => `<option value="${p.id}">${p.nombre_completo}</option>`).join("")}
-        </select>
+        <div class="searchable-select">
+          <input type="text" id="sesPacBusca" placeholder="Escribe para buscar paciente..." autocomplete="off"
+                 oninput="buscarOpciones('sesPac','paciente',this.value)"
+                 onfocus="buscarOpciones('sesPac','paciente',this.value)"
+                 onblur="setTimeout(()=>cerrarBuscador('sesPac'),200)">
+          <input type="hidden" id="sesPac" value="">
+          <div class="search-dropdown" id="sesPacDropdown" style="display:none"></div>
+        </div>
       </div>
       <div class="form-group">
         <label>Tratamiento / Tipo de servicio *</label>
@@ -4455,7 +4486,7 @@ function renderSesiones() {
     if (f) f.valueAsDate = new Date();
 
     // Al elegir profesional, autollenar honorario y especialidad/tratamiento
-    document.getElementById("sesProf").addEventListener("change", e => {
+    document.getElementById("sesProf").addEventListener("itzjakChange", e => {
       const profId = parseInt(e.target.value);
       if (!profId) return;
       const prof = PROFESIONALES.find(p => p.id === profId);
@@ -4474,7 +4505,7 @@ function renderSesiones() {
     });
 
     // Al elegir paciente, intentar autollenar lo que paga (si tiene tratamiento previo con ese prof)
-    document.getElementById("sesPac").addEventListener("change", e => {
+    document.getElementById("sesPac").addEventListener("itzjakChange", e => {
       const pacId = parseInt(e.target.value);
       const profId = parseInt(document.getElementById("sesProf").value);
       if (!pacId || !profId) return;
@@ -4491,6 +4522,82 @@ function renderSesiones() {
     document.getElementById("sesHonorario").addEventListener("input", calcularCoberturaItzjak);
     document.getElementById("sesPagoPac").addEventListener("input", calcularCoberturaItzjak);
   }, 0);
+}
+
+// ============================================================
+// BUSCADOR CON AUTOCOMPLETADO (reemplaza <select> grandes)
+// ============================================================
+
+function buscarOpciones(idCampo, tipo, query) {
+  const dropdown = document.getElementById(idCampo + "Dropdown");
+  if (!dropdown) return;
+
+  const q = (query || "").trim().toLowerCase();
+
+  let lista = [];
+  if (tipo === "profesional") {
+    lista = PROFESIONALES.filter(p => p.activo !== false).map(p => ({
+      id: p.id,
+      titulo: p.nombre,
+      sub: `${p.especialidad} · ${ui.formatMoney(p.honorario_sesion)}/sesión`,
+      texto: `${p.nombre} ${p.especialidad}`.toLowerCase(),
+    }));
+  } else if (tipo === "paciente") {
+    lista = PACIENTES.map(p => {
+      const fam = p.familia_id ? FAMILIAS.find(f => f.id === p.familia_id) : null;
+      return {
+        id: p.id,
+        titulo: p.nombre_completo,
+        sub: [fam ? `Familia ${fam.apellido}` : null, p.colegio || null, p.cedula || null].filter(Boolean).join(" · "),
+        texto: `${p.nombre_completo} ${fam?.apellido || ''} ${p.colegio || ''} ${p.cedula || ''}`.toLowerCase(),
+      };
+    });
+  }
+
+  // Filtrar por query (búsqueda flexible: cada palabra debe aparecer)
+  if (q.length > 0) {
+    const palabras = q.split(/\s+/).filter(Boolean);
+    lista = lista.filter(item => palabras.every(p => item.texto.includes(p)));
+  }
+
+  // Ordenar alfabéticamente
+  lista.sort((a, b) => a.titulo.localeCompare(b.titulo, 'es'));
+
+  // Limitar a 50 resultados para que no sea pesado
+  const truncado = lista.length > 50;
+  const visibles = lista.slice(0, 50);
+
+  if (visibles.length === 0) {
+    dropdown.innerHTML = `<div style="padding:14px;text-align:center;color:var(--gris-500);font-size:13px">Sin resultados${q ? ' para "' + q + '"' : ''}</div>`;
+    dropdown.style.display = "block";
+    return;
+  }
+
+  dropdown.innerHTML = visibles.map(item => `
+    <div class="search-item" onmousedown="seleccionarOpcion('${idCampo}', ${item.id}, ${JSON.stringify(item.titulo).replace(/'/g, "&apos;")})">
+      <div style="font-weight:600;font-size:13px">${item.titulo}</div>
+      ${item.sub ? `<div style="font-size:11px;color:var(--gris-500);margin-top:2px">${item.sub}</div>` : ''}
+    </div>
+  `).join("") + (truncado ? `<div style="padding:8px 14px;font-size:11px;color:var(--gris-500);background:var(--gris-50);border-top:1px solid var(--gris-200)">Mostrando primeros 50 de ${lista.length}. Escribe más para filtrar.</div>` : "");
+  dropdown.style.display = "block";
+}
+
+function seleccionarOpcion(idCampo, id, titulo) {
+  const hidden = document.getElementById(idCampo);
+  const visible = document.getElementById(idCampo + "Busca");
+  if (hidden) hidden.value = id;
+  if (visible) visible.value = titulo;
+  cerrarBuscador(idCampo);
+  // Disparar evento personalizado para que los listeners reaccionen
+  if (hidden) {
+    const ev = new CustomEvent("itzjakChange", { detail: { value: id } });
+    hidden.dispatchEvent(ev);
+  }
+}
+
+function cerrarBuscador(idCampo) {
+  const dropdown = document.getElementById(idCampo + "Dropdown");
+  if (dropdown) dropdown.style.display = "none";
 }
 
 function calcularCoberturaItzjak() {
@@ -4587,7 +4694,9 @@ async function guardarNuevaSesion() {
   // Limpiar formulario
   document.getElementById("sesNotas").value = "";
   document.getElementById("sesPac").value = "";
+  document.getElementById("sesPacBusca").value = "";
   document.getElementById("sesProf").value = "";
+  document.getElementById("sesProfBusca").value = "";
   document.getElementById("sesTrat").value = "";
   document.getElementById("sesHonorario").value = "";
   document.getElementById("sesPagoPac").value = "";
