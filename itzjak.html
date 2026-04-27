@@ -594,7 +594,59 @@ tr.clickable:hover { background: var(--gris-50); }
     </div>
     <h1>Itzjak</h1>
     <p class="subtitle">"Sanando mentes, creando sonrisas"</p>
-    <button class="btn-primary btn-full" onclick="entrar()">Entrar</button>
+
+    <div class="form-group" style="margin-top:16px">
+      <label>Usuario o Email</label>
+      <input type="text" id="loginUser" placeholder="usuario o email" autocomplete="username" autofocus>
+    </div>
+    <div class="form-group">
+      <label>Clave</label>
+      <input type="password" id="loginPass" placeholder="••••••" autocomplete="current-password">
+    </div>
+    <div id="loginError" style="color:var(--rojo);font-size:13px;margin-bottom:12px;min-height:18px"></div>
+    <button class="btn-primary btn-full" onclick="intentarLogin()">Entrar</button>
+  </div>
+</div>
+
+<div id="inviteScreen" style="display:none;position:fixed;inset:0;background:linear-gradient(135deg, var(--azul) 0%, var(--azul-oscuro) 100%);align-items:center;justify-content:center;z-index:1000">
+  <div class="login-card" style="max-width:460px">
+    <div class="login-logo">
+      <svg width="80" height="80" viewBox="0 0 100 100">
+        <rect width="100" height="100" rx="16" fill="#3a4a8a"/>
+        <text x="50" y="58" text-anchor="middle" fill="#f5b800" font-size="22" font-weight="700" font-family="Arial">ITZJAK</text>
+        <path d="M 30 68 Q 50 80, 70 68" stroke="#f5b800" stroke-width="3" fill="none" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <h1 style="text-align:center;font-size:22px">Bienvenido a Itzjak</h1>
+    <p class="subtitle" id="inviteSubtitle">Has sido invitado al sistema. Completa tus datos para crear tu cuenta.</p>
+
+    <div id="inviteForm" style="margin-top:16px">
+      <div class="form-group">
+        <label>Tu nombre completo *</label>
+        <input type="text" id="invNombre" placeholder="Ej: Sara Cohen" autofocus>
+      </div>
+      <div class="form-group">
+        <label>Email (será tu usuario) *</label>
+        <input type="email" id="invEmail" placeholder="tu@email.com" readonly style="background:var(--gris-100)">
+        <small style="color:var(--gris-500);font-size:11px">El email lo definió el administrador en la invitación.</small>
+      </div>
+      <div class="form-group">
+        <label>Elige una clave *</label>
+        <input type="password" id="invClave" placeholder="mínimo 6 caracteres">
+      </div>
+      <div class="form-group">
+        <label>Confirma tu clave *</label>
+        <input type="password" id="invClave2" placeholder="repite la clave">
+      </div>
+      <div id="inviteError" style="color:var(--rojo);font-size:13px;margin-bottom:12px;min-height:18px"></div>
+      <button class="btn-primary btn-full" onclick="aceptarInvitacion()">Crear mi cuenta</button>
+    </div>
+
+    <div id="inviteInvalid" style="display:none;text-align:center;margin-top:24px">
+      <h3 style="color:var(--rojo);margin-bottom:8px">Invitación inválida</h3>
+      <p style="color:var(--gris-500);font-size:14px;margin-bottom:16px" id="inviteInvalidMsg">Este enlace de invitación ya fue usado o ha expirado.</p>
+      <button class="btn-secondary" onclick="window.location.search=''">Ir al login</button>
+    </div>
   </div>
 </div>
 
@@ -658,6 +710,9 @@ tr.clickable:hover { background: var(--gris-50); }
       </a>
 
       <div class="sidebar-section">Sistema</div>
+      <a class="nav-item" data-view="usuarios">
+        <span class="code">US</span> Usuarios
+      </a>
       <a class="nav-item" data-view="configuracion">
         <span class="code">CF</span> Configuración
       </a>
@@ -669,7 +724,7 @@ tr.clickable:hover { background: var(--gris-50); }
         <div class="name">Admin Demo</div>
         <span class="role">Administrador</span>
       </div>
-      <button id="logoutBtn" onclick="resetearTodo()" title="Resetear datos">⏻</button>
+      <button id="logoutBtn" onclick="salir()" title="Cerrar sesión">⏻</button>
     </div>
   </aside>
 
@@ -693,6 +748,7 @@ tr.clickable:hover { background: var(--gris-50); }
     <div id="view-cierre" class="view"></div>
     <div id="view-reporte-donante" class="view"></div>
     <div id="view-configuracion" class="view"></div>
+    <div id="view-usuarios" class="view"></div>
   </main>
 </div>
 
@@ -713,12 +769,16 @@ const STORAGE_KEYS = {
   familias: 'itzjak_familias',
   cuentas: 'itzjak_cuentas',
   movimientos: 'itzjak_movimientos',
+  usuarios: 'itzjak_usuarios',
+  invitaciones: 'itzjak_invitaciones',
+  sesion_actual: 'itzjak_sesion_actual',
+  tasas: 'itzjak_tasas',
   inicializado: 'itzjak_inicializado',
   version: 'itzjak_version',
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v4.0-import";
+const VERSION_ACTUAL = "v6.0-tasas";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -906,6 +966,16 @@ if (!CUENTAS || CUENTAS.length === 0) {
 // === Movimientos (transacciones de cuentas) ===
 let MOVIMIENTOS = cargar(STORAGE_KEYS.movimientos, []);
 
+// === Tasas de cambio (Bs/USD) ===
+const TASAS_INICIALES = {
+  bcv: 0,
+  p2p: 0,
+  fechaActualizacion: null,
+  fuente: null, // "manual" o "automatica"
+};
+let TASAS = cargar(STORAGE_KEYS.tasas, TASAS_INICIALES);
+if (!TASAS.bcv && !TASAS.p2p) TASAS = { ...TASAS_INICIALES };
+
 function pagosRealizados() {
   const grupo = {};
   for (const s of SESIONES.filter(s => s.estado_pago_itzjak === "pagado")) {
@@ -928,6 +998,40 @@ function guardarDonaciones() { guardar(STORAGE_KEYS.donaciones, DONACIONES); }
 function guardarFamilias() { guardar(STORAGE_KEYS.familias, FAMILIAS); }
 function guardarCuentas() { guardar(STORAGE_KEYS.cuentas, CUENTAS); }
 function guardarMovimientos() { guardar(STORAGE_KEYS.movimientos, MOVIMIENTOS); }
+function guardarTasas() { guardar(STORAGE_KEYS.tasas, TASAS); }
+
+// === Helper: convertir Bs a USD usando tasa BCV o P2P ===
+function bsAUsd(montoBs, tipo = "bcv") {
+  const tasa = (tipo === "p2p") ? TASAS.p2p : TASAS.bcv;
+  if (!tasa || tasa <= 0) return null;
+  return montoBs / tasa;
+}
+
+// === Actualizar tasas desde dolarapi.com ===
+async function actualizarTasasAuto() {
+  try {
+    const resp = await fetch("https://ve.dolarapi.com/v1/dolares", {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+    });
+    if (!resp.ok) throw new Error("API respondió con error " + resp.status);
+    const data = await resp.json();
+
+    // dolarapi devuelve un array. Buscar oficial (BCV) y paralelo (P2P)
+    const oficial = data.find(d => (d.fuente || "").toLowerCase().includes("oficial"));
+    const paralelo = data.find(d => (d.fuente || "").toLowerCase().includes("paralelo"));
+
+    if (oficial && oficial.promedio) TASAS.bcv = parseFloat(oficial.promedio);
+    if (paralelo && paralelo.promedio) TASAS.p2p = parseFloat(paralelo.promedio);
+
+    TASAS.fechaActualizacion = new Date().toISOString();
+    TASAS.fuente = "automatica";
+    guardarTasas();
+    return { ok: true, bcv: TASAS.bcv, p2p: TASAS.p2p };
+  } catch (err) {
+    return { ok: false, error: err.message || "Error desconocido" };
+  }
+}
 
 // === Helper: registra un movimiento (entrada/salida) en una cuenta ===
 function registrarMovimiento({ cuenta_id, tipo, monto, concepto, categoria, fecha, referencia, ref_tipo, ref_id, notas }) {
@@ -1013,16 +1117,311 @@ function diasDesde(fecha) {
 // NAV
 // ============================================================
 
+// ============================================================
+// AUTENTICACIÓN Y USUARIOS
+// ============================================================
+
+// Definición de módulos disponibles para permisos
+const MODULOS_PERMISOS = [
+  { id: "dashboard", label: "Dashboard", esencial: true },
+  { id: "pacientes", label: "Pacientes" },
+  { id: "familias", label: "Familias" },
+  { id: "profesionales", label: "Profesionales" },
+  { id: "sesiones", label: "Sesiones" },
+  { id: "cuentas", label: "Cuentas" },
+  { id: "pagos", label: "Pagos / Gastos" },
+  { id: "honorarios", label: "Honorarios" },
+  { id: "historial-pagos", label: "Historial pagos" },
+  { id: "cobros", label: "Cobros pacientes" },
+  { id: "donaciones", label: "Donaciones" },
+  { id: "cierre", label: "Cierre de mes" },
+  { id: "reporte-donante", label: "Reporte donantes" },
+  { id: "configuracion", label: "Configuración", soloAdmin: true },
+  { id: "usuarios", label: "Usuarios", soloAdmin: true },
+];
+
+// Usuarios iniciales: el admin "mish" siempre existe
+const USUARIOS_INICIALES = [
+  {
+    id: 1,
+    usuario: "mish",
+    nombre: "Mish",
+    email: "mish@itzjak.org",
+    clave: "123456",
+    rol: "Administrador",
+    permisos: MODULOS_PERMISOS.map(m => m.id), // todos los permisos
+    activo: true,
+    creado_en: new Date().toISOString(),
+  },
+];
+
+let USUARIOS = cargar(STORAGE_KEYS.usuarios, null);
+if (!USUARIOS || USUARIOS.length === 0) {
+  USUARIOS = USUARIOS_INICIALES;
+  guardar(STORAGE_KEYS.usuarios, USUARIOS);
+} else {
+  // Asegurar que mish admin siempre existe y tiene todos los permisos
+  let mish = USUARIOS.find(u => u.usuario === "mish");
+  if (!mish) {
+    USUARIOS.push(USUARIOS_INICIALES[0]);
+    guardar(STORAGE_KEYS.usuarios, USUARIOS);
+  } else {
+    // Asegurar que tenga todos los permisos
+    mish.permisos = MODULOS_PERMISOS.map(m => m.id);
+    mish.rol = "Administrador";
+    mish.activo = true;
+    guardar(STORAGE_KEYS.usuarios, USUARIOS);
+  }
+}
+
+// Invitaciones pendientes
+let INVITACIONES = cargar(STORAGE_KEYS.invitaciones, []);
+
+function guardarUsuarios() { guardar(STORAGE_KEYS.usuarios, USUARIOS); }
+function guardarInvitaciones() { guardar(STORAGE_KEYS.invitaciones, INVITACIONES); }
+
+let USUARIO_ACTUAL = null;
+
+// Generar token aleatorio para invitaciones
+function generarToken() {
+  return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
+}
+
+function tienePermiso(usuario, modulo) {
+  if (!usuario) return false;
+  if (usuario.rol === "Administrador") return true;
+  return (usuario.permisos || []).includes(modulo);
+}
+
+function intentarLogin() {
+  const userInput = (document.getElementById("loginUser").value || "").trim().toLowerCase();
+  const pass = document.getElementById("loginPass").value || "";
+  const err = document.getElementById("loginError");
+
+  if (!userInput || !pass) {
+    err.textContent = "Debes ingresar usuario/email y clave";
+    return;
+  }
+
+  // Permitir login con usuario o con email
+  const found = USUARIOS.find(u =>
+    (u.usuario.toLowerCase() === userInput || (u.email || "").toLowerCase() === userInput)
+    && u.clave === pass
+    && u.activo !== false
+  );
+
+  if (!found) {
+    err.textContent = "Usuario/email o clave incorrectos";
+    document.getElementById("loginPass").value = "";
+    return;
+  }
+
+  USUARIO_ACTUAL = found;
+  err.textContent = "";
+  // Guardar sesión
+  guardar(STORAGE_KEYS.sesion_actual, { usuario_id: found.id, ts: Date.now() });
+  entrar();
+}
+
 function entrar() {
+  if (!USUARIO_ACTUAL) {
+    document.getElementById("loginScreen").style.display = "flex";
+    document.getElementById("appScreen").style.display = "none";
+    return;
+  }
   document.getElementById("loginScreen").style.display = "none";
   document.getElementById("appScreen").style.display = "flex";
-  cambiarVista("dashboard");
+
+  // Actualizar el nombre de usuario en el sidebar
+  const userBlock = document.querySelector(".user-info .name-block");
+  if (userBlock) {
+    userBlock.innerHTML = `
+      <div class="name">${USUARIO_ACTUAL.nombre}</div>
+      <span class="role">${USUARIO_ACTUAL.rol}</span>
+    `;
+  }
+  const avatar = document.querySelector(".user-info .user-avatar");
+  if (avatar) {
+    avatar.textContent = USUARIO_ACTUAL.nombre.charAt(0).toUpperCase();
+  }
+
+  // Aplicar permisos al menú: ocultar items que el usuario no tiene permiso de ver
+  aplicarPermisosMenu();
+
+  // Decidir vista inicial: dashboard si tiene permiso, sino la primera permitida
+  let vistaInicial = "dashboard";
+  if (!tienePermiso(USUARIO_ACTUAL, "dashboard")) {
+    const primeraPermitida = MODULOS_PERMISOS.find(m => tienePermiso(USUARIO_ACTUAL, m.id) && !m.soloAdmin);
+    vistaInicial = primeraPermitida ? primeraPermitida.id : null;
+  }
+
+  if (vistaInicial) {
+    cambiarVista(vistaInicial);
+  } else {
+    // Sin ningún permiso: mostrar mensaje
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    const dash = document.getElementById("view-dashboard");
+    if (dash) {
+      dash.classList.add("active");
+      dash.innerHTML = `
+        <div style="text-align:center;padding:60px 20px;color:var(--gris-500)">
+          <h2 style="margin-bottom:8px">Sin acceso a módulos</h2>
+          <p>El administrador aún no te ha dado permisos a ningún módulo.<br>
+          Por favor, pídele que te asigne acceso.</p>
+        </div>
+      `;
+    }
+  }
 }
+
+function aplicarPermisosMenu() {
+  if (!USUARIO_ACTUAL) return;
+  const esAdmin = USUARIO_ACTUAL.rol === "Administrador";
+  document.querySelectorAll(".nav-item").forEach(item => {
+    const view = item.dataset.view;
+    if (!view) return;
+    const moduloDef = MODULOS_PERMISOS.find(m => m.id === view);
+    let visible = tienePermiso(USUARIO_ACTUAL, view);
+    if (moduloDef && moduloDef.soloAdmin && !esAdmin) visible = false;
+    item.style.display = visible ? "" : "none";
+  });
+  // Ocultar secciones del sidebar que no tengan ningún item visible
+  document.querySelectorAll(".sidebar-section").forEach(sec => {
+    let next = sec.nextElementSibling;
+    let tieneVisible = false;
+    while (next && !next.classList.contains("sidebar-section")) {
+      if (next.classList.contains("nav-item") && next.style.display !== "none") {
+        tieneVisible = true;
+        break;
+      }
+      next = next.nextElementSibling;
+    }
+    sec.style.display = tieneVisible ? "" : "none";
+  });
+}
+
 function salir() {
+  USUARIO_ACTUAL = null;
+  document.getElementById("loginUser").value = "";
+  document.getElementById("loginPass").value = "";
+  document.getElementById("loginError").textContent = "";
   document.getElementById("loginScreen").style.display = "flex";
   document.getElementById("appScreen").style.display = "none";
+  setTimeout(() => document.getElementById("loginUser").focus(), 100);
+}
+
+// Permite hacer login con Enter en cualquier campo
+document.addEventListener("DOMContentLoaded", () => {
+  ["loginUser", "loginPass"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener("keypress", e => {
+        if (e.key === "Enter") intentarLogin();
+      });
+    }
+  });
+
+  // Detectar si hay un token de invitación en la URL
+  const params = new URLSearchParams(window.location.search);
+  const inviteToken = params.get("invite");
+  if (inviteToken) {
+    mostrarPantallaInvitacion(inviteToken);
+  }
+});
+
+// === Mostrar pantalla de invitación ===
+function mostrarPantallaInvitacion(token) {
+  const inv = INVITACIONES.find(i => i.token === token && !i.usada);
+  document.getElementById("loginScreen").style.display = "none";
+  const screen = document.getElementById("inviteScreen");
+  screen.style.display = "flex";
+
+  if (!inv) {
+    document.getElementById("inviteForm").style.display = "none";
+    document.getElementById("inviteInvalid").style.display = "block";
+    return;
+  }
+
+  // Verificar que no haya expirado (7 días)
+  const ahora = Date.now();
+  const exp = new Date(inv.creada_en).getTime() + 7 * 24 * 60 * 60 * 1000;
+  if (ahora > exp) {
+    document.getElementById("inviteForm").style.display = "none";
+    document.getElementById("inviteInvalid").style.display = "block";
+    document.getElementById("inviteInvalidMsg").textContent = "Esta invitación ha expirado (válida por 7 días). Pide al administrador una nueva.";
+    return;
+  }
+
+  // Verificar que el email no esté ya en uso
+  const yaExiste = USUARIOS.find(u => (u.email || "").toLowerCase() === (inv.email || "").toLowerCase());
+  if (yaExiste) {
+    document.getElementById("inviteForm").style.display = "none";
+    document.getElementById("inviteInvalid").style.display = "block";
+    document.getElementById("inviteInvalidMsg").textContent = "Ya existe una cuenta con este email. Por favor inicia sesión normalmente.";
+    return;
+  }
+
+  // Llenar el email
+  document.getElementById("invEmail").value = inv.email;
+  document.getElementById("inviteSubtitle").textContent = `${inv.invitado_por_nombre} te ha invitado a Itzjak. Completa tus datos para crear tu cuenta.`;
+}
+
+function aceptarInvitacion() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("invite");
+  const inv = INVITACIONES.find(i => i.token === token && !i.usada);
+  if (!inv) {
+    document.getElementById("inviteError").textContent = "Invitación inválida";
+    return;
+  }
+
+  const nombre = document.getElementById("invNombre").value.trim();
+  const email = document.getElementById("invEmail").value.trim().toLowerCase();
+  const clave = document.getElementById("invClave").value;
+  const clave2 = document.getElementById("invClave2").value;
+  const err = document.getElementById("inviteError");
+
+  if (!nombre) { err.textContent = "Pon tu nombre completo"; return; }
+  if (!clave || clave.length < 6) { err.textContent = "La clave debe tener mínimo 6 caracteres"; return; }
+  if (clave !== clave2) { err.textContent = "Las claves no coinciden"; return; }
+
+  // Crear el usuario
+  const nuevoUsuario = {
+    id: nuevoId(USUARIOS),
+    usuario: email, // por defecto, usuario = email
+    nombre,
+    email,
+    clave,
+    rol: inv.rol || "Empleado",
+    permisos: inv.permisos || ["dashboard"],
+    activo: true,
+    creado_en: new Date().toISOString(),
+    invitado_por: inv.invitado_por_id,
+  };
+  USUARIOS.push(nuevoUsuario);
+  guardarUsuarios();
+
+  // Marcar invitación como usada
+  inv.usada = true;
+  inv.usuario_creado_id = nuevoUsuario.id;
+  inv.aceptada_en = new Date().toISOString();
+  guardarInvitaciones();
+
+  // Auto-login
+  USUARIO_ACTUAL = nuevoUsuario;
+  guardar(STORAGE_KEYS.sesion_actual, { usuario_id: nuevoUsuario.id, ts: Date.now() });
+
+  // Limpiar URL y entrar
+  window.history.replaceState({}, '', window.location.pathname);
+  document.getElementById("inviteScreen").style.display = "none";
+  entrar();
 }
 function cambiarVista(view) {
+  // Verificar permiso
+  if (USUARIO_ACTUAL && !tienePermiso(USUARIO_ACTUAL, view)) {
+    alert(`No tienes permiso para acceder al módulo "${view}".\nContacta al administrador.`);
+    return;
+  }
   document.querySelectorAll(".nav-item").forEach(i => i.classList.toggle("active", i.dataset.view === view));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + view));
   const r = {
@@ -1034,6 +1433,7 @@ function cambiarVista(view) {
     cobros: renderCobros, donaciones: renderDonaciones,
     cierre: renderCierre, "reporte-donante": renderReporteDonante,
     configuracion: renderConfiguracion,
+    usuarios: renderUsuarios,
   };
   r[view]?.();
 }
@@ -3371,6 +3771,475 @@ function confirmarLiquidacion(profId) {
 }
 
 // ============================================================
+// USUARIOS — gestión, invitaciones y permisos
+// ============================================================
+
+function renderUsuarios() {
+  // Solo accesible para Administrador
+  if (USUARIO_ACTUAL.rol !== "Administrador") {
+    document.getElementById("view-usuarios").innerHTML = `
+      <div class="empty-state">Solo el administrador puede gestionar usuarios.</div>
+    `;
+    return;
+  }
+
+  const invitacionesPendientes = INVITACIONES.filter(i => !i.usada);
+  const invitacionesUsadas = INVITACIONES.filter(i => i.usada);
+
+  document.getElementById("view-usuarios").innerHTML = `
+    <div class="header-row">
+      <h1>Usuarios</h1>
+      <button class="btn-primary" onclick="modalNuevaInvitacion()">+ Invitar empleado</button>
+    </div>
+    <p class="muted" style="margin-bottom:24px">Gestiona empleados, invitaciones y permisos de acceso.</p>
+
+    <h2 style="margin-bottom:14px">Usuarios activos (${USUARIOS.filter(u => u.activo !== false).length})</h2>
+    <div class="card" style="margin-bottom:24px">
+      <table>
+        <thead><tr><th>Usuario</th><th>Email</th><th>Rol</th><th>Permisos</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+          ${USUARIOS.map(u => `
+            <tr class="clickable" onclick="verUsuario(${u.id})">
+              <td>
+                <div class="id-cell">
+                  <div class="user-avatar" style="width:32px;height:32px;font-size:12px">${u.nombre.charAt(0).toUpperCase()}</div>
+                  <div>
+                    <div style="font-weight:600">${u.nombre}</div>
+                    <div style="font-size:11px;color:var(--gris-500)">${u.usuario}</div>
+                  </div>
+                </div>
+              </td>
+              <td>${u.email || '—'}</td>
+              <td><span class="badge ${u.rol === 'Administrador' ? 'badge-si' : 'badge-active'}">${u.rol}</span></td>
+              <td><strong>${u.rol === 'Administrador' ? 'Todos' : (u.permisos || []).length + ' módulos'}</strong></td>
+              <td>${u.activo !== false ? '<span class="badge badge-active">Activo</span>' : '<span class="badge badge-inactive">Inactivo</span>'}</td>
+              <td style="color:var(--gris-400);font-size:18px">›</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <h2 style="margin-bottom:14px">Invitaciones pendientes (${invitacionesPendientes.length})</h2>
+    <div class="card" style="margin-bottom:24px">
+      ${invitacionesPendientes.length === 0 ? '<div class="empty-state">No hay invitaciones pendientes</div>' : `
+        <table>
+          <thead><tr><th>Email invitado</th><th>Rol</th><th>Permisos</th><th>Creada</th><th>Link</th><th></th></tr></thead>
+          <tbody>
+            ${invitacionesPendientes.map(inv => {
+              const exp = new Date(inv.creada_en).getTime() + 7 * 24 * 60 * 60 * 1000;
+              const expirada = Date.now() > exp;
+              return `
+                <tr>
+                  <td><strong>${inv.email}</strong></td>
+                  <td><span class="badge badge-active">${inv.rol || 'Empleado'}</span></td>
+                  <td>${(inv.permisos || []).length} módulos</td>
+                  <td>${ui.formatDate(inv.creada_en)} ${expirada ? '<span class="badge badge-pending">Expirada</span>' : ''}</td>
+                  <td>
+                    <button class="btn-secondary btn-sm" onclick="copiarLinkInvitacion('${inv.token}')">📋 Copiar link</button>
+                  </td>
+                  <td>
+                    <button class="btn-secondary btn-sm" onclick="cancelarInvitacion('${inv.token}')" style="color:var(--rojo);border-color:var(--rojo)">Cancelar</button>
+                  </td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      `}
+    </div>
+
+    ${invitacionesUsadas.length > 0 ? `
+      <h2 style="margin-bottom:14px">Invitaciones usadas (${invitacionesUsadas.length})</h2>
+      <div class="card">
+        <table>
+          <thead><tr><th>Email</th><th>Aceptada</th><th>Usuario creado</th></tr></thead>
+          <tbody>
+            ${invitacionesUsadas.map(inv => {
+              const u = USUARIOS.find(x => x.id === inv.usuario_creado_id);
+              return `
+                <tr>
+                  <td>${inv.email}</td>
+                  <td>${inv.aceptada_en ? ui.formatDate(inv.aceptada_en) : '—'}</td>
+                  <td>${u ? `<strong>${u.nombre}</strong>` : '<span style="color:var(--gris-400)">eliminado</span>'}</td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    ` : ''}
+  `;
+}
+
+// === Modal nueva invitación ===
+function modalNuevaInvitacion() {
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">US</span>
+        <div>
+          <div class="name">Invitar empleado</div>
+          <div class="meta">Crea una invitación para un nuevo usuario</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div class="form-group">
+        <label>Email del empleado *</label>
+        <input type="email" id="ni_email" placeholder="empleado@email.com">
+        <small style="color:var(--gris-500);font-size:11px">Le enviarás el link de invitación a este email (manualmente).</small>
+      </div>
+      <div class="form-group">
+        <label>Rol *</label>
+        <select id="ni_rol" onchange="actualizarPermisosSegunRol()">
+          <option value="Empleado">Empleado (acceso limitado)</option>
+          <option value="Coordinador">Coordinador (acceso amplio)</option>
+          <option value="Administrador">Administrador (acceso total)</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="ni_permisosBox">
+        <label>Módulos a los que tendrá acceso</label>
+        <div style="background:var(--gris-50);border-radius:10px;padding:14px;border:1px solid var(--gris-200)">
+          <div style="margin-bottom:10px;display:flex;gap:8px">
+            <button class="btn-secondary btn-sm" onclick="seleccionarTodosPermisos(true)">Seleccionar todos</button>
+            <button class="btn-secondary btn-sm" onclick="seleccionarTodosPermisos(false)">Quitar todos</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:8px">
+            ${MODULOS_PERMISOS.filter(m => !m.soloAdmin).map(m => `
+              <label class="checkbox-label" style="background:white;padding:8px 10px;border-radius:8px;border:1px solid var(--gris-200);font-weight:500">
+                <input type="checkbox" class="ni_perm" value="${m.id}" ${m.esencial ? 'checked' : ''}>
+                ${m.label}
+              </label>
+            `).join("")}
+          </div>
+          <small style="color:var(--gris-500);font-size:11px;display:block;margin-top:8px">El Dashboard se incluye automáticamente. Los módulos de Sistema (Usuarios, Configuración) solo son accesibles para Administradores.</small>
+        </div>
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="crearInvitacion()">Generar invitación</button>
+    </div>
+  `);
+  setTimeout(actualizarPermisosSegunRol, 50);
+}
+
+function actualizarPermisosSegunRol() {
+  const rol = document.getElementById("ni_rol").value;
+  const checks = document.querySelectorAll(".ni_perm");
+  const box = document.getElementById("ni_permisosBox");
+
+  if (rol === "Administrador") {
+    box.style.opacity = "0.5";
+    checks.forEach(c => { c.checked = true; c.disabled = true; });
+  } else if (rol === "Coordinador") {
+    box.style.opacity = "1";
+    checks.forEach(c => {
+      c.disabled = false;
+      // Coordinador: todo menos donaciones y reportes muy financieros
+      const sinAcceso = ["donaciones", "cierre", "reporte-donante"];
+      c.checked = !sinAcceso.includes(c.value);
+    });
+  } else {
+    // Empleado
+    box.style.opacity = "1";
+    checks.forEach(c => {
+      c.disabled = false;
+      // Empleado: solo dashboard, pacientes, sesiones por defecto
+      const default_ = ["dashboard", "pacientes", "sesiones"];
+      c.checked = default_.includes(c.value);
+    });
+  }
+}
+
+function seleccionarTodosPermisos(value) {
+  document.querySelectorAll(".ni_perm").forEach(c => {
+    if (!c.disabled) c.checked = value;
+  });
+}
+
+function crearInvitacion() {
+  const email = (document.getElementById("ni_email").value || "").trim().toLowerCase();
+  const rol = document.getElementById("ni_rol").value;
+  if (!email || !email.includes("@")) { alert("Pon un email válido"); return; }
+
+  // Verificar si ya hay un usuario o invitación pendiente con ese email
+  if (USUARIOS.find(u => (u.email || "").toLowerCase() === email)) {
+    alert("Ya existe un usuario con ese email"); return;
+  }
+  if (INVITACIONES.find(i => i.email.toLowerCase() === email && !i.usada)) {
+    if (!confirm("Ya hay una invitación pendiente para ese email. ¿Crear una nueva igual?")) return;
+  }
+
+  // Recolectar permisos
+  let permisos;
+  if (rol === "Administrador") {
+    permisos = MODULOS_PERMISOS.map(m => m.id);
+  } else {
+    permisos = Array.from(document.querySelectorAll(".ni_perm:checked")).map(c => c.value);
+    if (!permisos.includes("dashboard")) permisos.unshift("dashboard");
+  }
+
+  const inv = {
+    token: generarToken(),
+    email,
+    rol,
+    permisos,
+    invitado_por_id: USUARIO_ACTUAL.id,
+    invitado_por_nombre: USUARIO_ACTUAL.nombre,
+    creada_en: new Date().toISOString(),
+    usada: false,
+  };
+  INVITACIONES.push(inv);
+  guardarInvitaciones();
+
+  cerrarModal();
+
+  // Mostrar el link generado
+  const link = window.location.origin + window.location.pathname + "?invite=" + inv.token;
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">US</span>
+        <div>
+          <div class="name">Invitación creada</div>
+          <div class="meta">Comparte este link con ${email}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+    <div style="padding:20px 28px">
+      <div class="alert-card info" style="margin-bottom:16px">
+        <strong>Cómo enviar la invitación:</strong>
+        <ol style="margin:8px 0 0 20px;font-size:13px;font-weight:normal">
+          <li>Copia el link de abajo</li>
+          <li>Mándalo por WhatsApp, email, o como prefieras a <strong>${email}</strong></li>
+          <li>Cuando entren al link, podrán crear su clave</li>
+        </ol>
+      </div>
+      <div class="form-group">
+        <label>Link de invitación (válido por 7 días)</label>
+        <textarea readonly id="invLinkBox" rows="3" style="font-family:monospace;font-size:11px;background:var(--gris-50);word-break:break-all">${link}</textarea>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-amarillo btn-full" onclick="copiarTextoLink()">📋 Copiar link</button>
+        ${navigator.share ? `<button class="btn-secondary btn-full" onclick="compartirLink('${link.replace(/'/g, "\\'")}', '${email}')">🔗 Compartir</button>` : ''}
+      </div>
+    </div>
+    <div class="detail-modal-foot">
+      <button class="btn-primary" onclick="cerrarModal();renderUsuarios()">Listo</button>
+    </div>
+  `);
+}
+
+function copiarTextoLink() {
+  const ta = document.getElementById("invLinkBox");
+  ta.select();
+  navigator.clipboard.writeText(ta.value).then(() => {
+    alert("✓ Link copiado al portapapeles");
+  }).catch(() => {
+    document.execCommand('copy');
+    alert("✓ Link copiado");
+  });
+}
+
+function compartirLink(link, email) {
+  if (navigator.share) {
+    navigator.share({
+      title: "Invitación a Itzjak",
+      text: `Has sido invitado al sistema de Itzjak (${email}). Entra al link para crear tu cuenta:`,
+      url: link
+    });
+  }
+}
+
+function copiarLinkInvitacion(token) {
+  const link = window.location.origin + window.location.pathname + "?invite=" + token;
+  navigator.clipboard.writeText(link).then(() => {
+    alert("✓ Link copiado al portapapeles");
+  }).catch(() => {
+    prompt("Copia este link:", link);
+  });
+}
+
+function cancelarInvitacion(token) {
+  const inv = INVITACIONES.find(i => i.token === token);
+  if (!inv) return;
+  if (!confirm(`¿Cancelar la invitación a "${inv.email}"?`)) return;
+  INVITACIONES = INVITACIONES.filter(i => i.token !== token);
+  guardarInvitaciones();
+  renderUsuarios();
+}
+
+// === Ver y editar usuario ===
+function verUsuario(id) {
+  const u = USUARIOS.find(x => x.id === id);
+  if (!u) return;
+  const esAdmin = u.rol === "Administrador";
+  const esYo = USUARIO_ACTUAL.id === id;
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">US</span>
+        <div>
+          <div class="name">${u.nombre}</div>
+          <div class="meta">${u.email} · ${u.rol}</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+
+    <div class="detail-hero">
+      <div class="detail-avatar">${u.nombre.charAt(0).toUpperCase()}</div>
+      <div class="detail-hero-main">
+        <h2>${u.nombre}</h2>
+        <div class="meta">${u.email} · @${u.usuario}</div>
+        <div class="status-pill">${u.activo !== false ? 'ACTIVO' : 'INACTIVO'}</div>
+      </div>
+      <div class="detail-score">
+        <div class="num">${esAdmin ? 'ALL' : (u.permisos || []).length}</div>
+        <div class="max">${esAdmin ? '' : '/ ' + MODULOS_PERMISOS.length}</div>
+        <div class="label">Permisos</div>
+      </div>
+    </div>
+
+    <div style="padding:20px 28px">
+      <h3>Datos del usuario</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px;margin-bottom:24px">
+        <div class="form-group">
+          <label>Nombre completo</label>
+          <input type="text" id="eu_nombre" value="${u.nombre}" ${esYo ? '' : ''}>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="eu_email" value="${u.email || ''}">
+        </div>
+        <div class="form-group">
+          <label>Rol</label>
+          <select id="eu_rol" ${esYo ? 'disabled' : ''} onchange="actualizarPermisosUsuarioSegunRol()">
+            <option value="Empleado" ${u.rol === 'Empleado' ? 'selected' : ''}>Empleado</option>
+            <option value="Coordinador" ${u.rol === 'Coordinador' ? 'selected' : ''}>Coordinador</option>
+            <option value="Administrador" ${u.rol === 'Administrador' ? 'selected' : ''}>Administrador</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label" style="background:var(--gris-50);padding:10px 12px;border-radius:8px;border:1px solid var(--gris-200)">
+            <input type="checkbox" id="eu_activo" ${u.activo !== false ? 'checked' : ''} ${esYo ? 'disabled' : ''}>
+            Usuario activo
+          </label>
+        </div>
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Cambiar clave (dejar en blanco para no cambiar)</label>
+          <input type="password" id="eu_clave" placeholder="Nueva clave (mínimo 6 caracteres)">
+        </div>
+      </div>
+
+      <h3>Permisos de módulos</h3>
+      <div id="eu_permisosBox" style="background:var(--gris-50);border-radius:10px;padding:14px;border:1px solid var(--gris-200);margin-top:10px">
+        <div style="margin-bottom:10px;display:flex;gap:8px">
+          <button class="btn-secondary btn-sm" onclick="seleccionarTodosPermisosEdit(true)">Seleccionar todos</button>
+          <button class="btn-secondary btn-sm" onclick="seleccionarTodosPermisosEdit(false)">Quitar todos</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:8px">
+          ${MODULOS_PERMISOS.filter(m => !m.soloAdmin).map(m => `
+            <label class="checkbox-label" style="background:white;padding:8px 10px;border-radius:8px;border:1px solid var(--gris-200);font-weight:500">
+              <input type="checkbox" class="eu_perm" value="${m.id}" ${(u.permisos || []).includes(m.id) ? 'checked' : ''}>
+              ${m.label}
+            </label>
+          `).join("")}
+        </div>
+        <small style="color:var(--gris-500);font-size:11px;display:block;margin-top:8px">Los Administradores tienen acceso a todos los módulos automáticamente, incluidos los de Sistema.</small>
+      </div>
+    </div>
+
+    <div class="detail-modal-foot">
+      ${!esYo && u.usuario !== 'mish' ? `<button class="btn-secondary" onclick="confirmarBorrarUsuario(${u.id})" style="color:var(--rojo);border-color:var(--rojo)">Eliminar</button>` : ''}
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-amarillo" onclick="guardarEdicionUsuario(${u.id})">Guardar cambios</button>
+    </div>
+  `);
+  setTimeout(actualizarPermisosUsuarioSegunRol, 50);
+}
+
+function actualizarPermisosUsuarioSegunRol() {
+  const rol = document.getElementById("eu_rol").value;
+  const box = document.getElementById("eu_permisosBox");
+  const checks = document.querySelectorAll(".eu_perm");
+  if (rol === "Administrador") {
+    box.style.opacity = "0.5";
+    checks.forEach(c => { c.checked = true; c.disabled = true; });
+  } else {
+    box.style.opacity = "1";
+    checks.forEach(c => c.disabled = false);
+  }
+}
+
+function seleccionarTodosPermisosEdit(value) {
+  document.querySelectorAll(".eu_perm").forEach(c => {
+    if (!c.disabled) c.checked = value;
+  });
+}
+
+function guardarEdicionUsuario(id) {
+  const u = USUARIOS.find(x => x.id === id);
+  if (!u) return;
+  const esYo = USUARIO_ACTUAL.id === id;
+
+  const nombre = document.getElementById("eu_nombre").value.trim();
+  const email = document.getElementById("eu_email").value.trim().toLowerCase();
+  const claveNueva = document.getElementById("eu_clave").value;
+
+  if (!nombre) { alert("El nombre es obligatorio"); return; }
+  if (!email || !email.includes("@")) { alert("Email inválido"); return; }
+  if (claveNueva && claveNueva.length < 6) { alert("La clave debe tener mínimo 6 caracteres"); return; }
+
+  // Verificar email único (excepto el mismo usuario)
+  const otroConEmail = USUARIOS.find(x => x.id !== id && (x.email || "").toLowerCase() === email);
+  if (otroConEmail) { alert("Ya hay otro usuario con ese email"); return; }
+
+  u.nombre = nombre;
+  u.email = email;
+  if (claveNueva) u.clave = claveNueva;
+  if (!esYo) {
+    u.rol = document.getElementById("eu_rol").value;
+    u.activo = document.getElementById("eu_activo").checked;
+  }
+
+  // Permisos
+  if (u.rol === "Administrador") {
+    u.permisos = MODULOS_PERMISOS.map(m => m.id);
+  } else {
+    u.permisos = Array.from(document.querySelectorAll(".eu_perm:checked")).map(c => c.value);
+    if (!u.permisos.includes("dashboard")) u.permisos.unshift("dashboard");
+  }
+
+  guardarUsuarios();
+  // Si es el usuario actual, actualizar
+  if (esYo) {
+    USUARIO_ACTUAL = u;
+    aplicarPermisosMenu();
+  }
+
+  cerrarModal();
+  renderUsuarios();
+}
+
+function confirmarBorrarUsuario(id) {
+  const u = USUARIOS.find(x => x.id === id);
+  if (!u) return;
+  if (u.usuario === "mish") { alert("No puedes eliminar al administrador principal"); return; }
+  if (!confirm(`¿Eliminar al usuario "${u.nombre}"? Esta acción no se puede deshacer.`)) return;
+  USUARIOS = USUARIOS.filter(x => x.id !== id);
+  guardarUsuarios();
+  cerrarModal();
+  renderUsuarios();
+}
+
+// ============================================================
 // CONFIGURACIÓN — sistema, importar Excel, exportar datos
 // ============================================================
 
@@ -4126,6 +4995,146 @@ function restaurarRespaldo(input) {
 }
 
 // ============================================================
+// TASAS DE CAMBIO — modal para configurar BCV y P2P
+// ============================================================
+
+function tiempoRelativo(fechaISO) {
+  if (!fechaISO) return "";
+  const ahora = Date.now();
+  const fecha = new Date(fechaISO).getTime();
+  const diff = ahora - fecha;
+  const min = Math.floor(diff / 60000);
+  const hr = Math.floor(diff / 3600000);
+  const dias = Math.floor(diff / 86400000);
+  if (min < 1) return "hace un momento";
+  if (min < 60) return `hace ${min} min`;
+  if (hr < 24) return `hace ${hr} h`;
+  if (dias === 1) return "ayer";
+  if (dias < 7) return `hace ${dias} días`;
+  return new Date(fechaISO).toLocaleDateString("es-VE");
+}
+
+function modalTasas() {
+  const ult = TASAS.fechaActualizacion ? new Date(TASAS.fechaActualizacion) : null;
+
+  abrirModal(`
+    <div class="modal-header">
+      <div class="id-cell">
+        <span class="code-tag">$$</span>
+        <div>
+          <div class="name">Tasas de cambio Bs/USD</div>
+          <div class="meta">Configuración manual o actualización automática</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="cerrarModal()">✕</button>
+    </div>
+
+    <div style="padding:20px 28px">
+      <div class="alert-card info" style="margin-bottom:16px">
+        Las tasas se usan para mostrar el equivalente en USD de tus cuentas en Bolívares.<br>
+        Puedes actualizarlas manualmente o usar el botón de actualización automática (consulta dolarapi.com).
+      </div>
+
+      <div style="background:var(--gris-50);padding:16px;border-radius:12px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <strong style="font-size:14px">Estado actual</strong>
+          <span style="font-size:12px;color:var(--gris-500)">
+            ${ult ? `Última actualización: ${tiempoRelativo(TASAS.fechaActualizacion)} · ${TASAS.fuente === 'automatica' ? '🌐 automática' : '✋ manual'}` : 'Sin actualizar todavía'}
+          </span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="background:white;padding:12px;border-radius:10px;border-left:3px solid var(--azul)">
+            <div style="font-size:10px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">BCV (Oficial)</div>
+            <div style="font-size:22px;font-weight:700;color:var(--azul);margin-top:4px">${TASAS.bcv > 0 ? 'Bs ' + TASAS.bcv.toFixed(2) : '—'}</div>
+            <div style="font-size:11px;color:var(--gris-500)">por dólar</div>
+          </div>
+          <div style="background:white;padding:12px;border-radius:10px;border-left:3px solid var(--naranja)">
+            <div style="font-size:10px;color:var(--gris-500);text-transform:uppercase;letter-spacing:1px;font-weight:700">P2P (Binance)</div>
+            <div style="font-size:22px;font-weight:700;color:var(--naranja);margin-top:4px">${TASAS.p2p > 0 ? 'Bs ' + TASAS.p2p.toFixed(2) : '—'}</div>
+            <div style="font-size:11px;color:var(--gris-500)">por dólar</div>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="margin-bottom:8px">🌐 Actualizar automáticamente</h3>
+      <p style="color:var(--gris-500);font-size:13px;margin-bottom:10px">
+        Consulta la tasa BCV y P2P desde <strong>dolarapi.com</strong> (API gratuita). Requiere conexión a internet.
+      </p>
+      <button class="btn-amarillo btn-full" onclick="ejecutarActualizacionAuto()" id="btnAuto">
+        🔄 Actualizar tasas automáticamente
+      </button>
+      <div id="autoStatus" style="margin-top:10px;min-height:20px;font-size:13px"></div>
+
+      <hr style="margin:24px 0;border:none;border-top:1px solid var(--gris-200)">
+
+      <h3 style="margin-bottom:8px">✋ Editar manualmente</h3>
+      <p style="color:var(--gris-500);font-size:13px;margin-bottom:10px">
+        Si la actualización automática no funciona o quieres usar otra tasa, puedes ponerla manualmente.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group">
+          <label>Tasa BCV (Bs por $)</label>
+          <input type="number" id="tasaBcv" value="${TASAS.bcv > 0 ? TASAS.bcv : ''}" step="0.01" min="0" placeholder="Ej: 100.50">
+        </div>
+        <div class="form-group">
+          <label>Tasa P2P / Binance (Bs por $)</label>
+          <input type="number" id="tasaP2p" value="${TASAS.p2p > 0 ? TASAS.p2p : ''}" step="0.01" min="0" placeholder="Ej: 114.25">
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-modal-foot">
+      <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+      <button class="btn-primary" onclick="guardarTasasManuales()">Guardar tasas</button>
+    </div>
+  `);
+}
+
+async function ejecutarActualizacionAuto() {
+  const btn = document.getElementById("btnAuto");
+  const status = document.getElementById("autoStatus");
+  btn.disabled = true;
+  btn.textContent = "🔄 Consultando dolarapi.com...";
+  status.innerHTML = '<span style="color:var(--azul)">Conectando con dolarapi.com...</span>';
+
+  const res = await actualizarTasasAuto();
+  btn.disabled = false;
+  btn.textContent = "🔄 Actualizar tasas automáticamente";
+
+  if (res.ok) {
+    status.innerHTML = `<span style="color:var(--verde)">✓ Tasas actualizadas correctamente</span>`;
+    setTimeout(() => {
+      cerrarModal();
+      // Refrescar la vista actual si es cuentas
+      const activeView = document.querySelector(".nav-item.active")?.dataset.view;
+      if (activeView === "cuentas") renderCuentas();
+    }, 800);
+  } else {
+    status.innerHTML = `<span style="color:var(--rojo)">✗ Error: ${res.error}<br><small>La API podría estar caída. Usa la actualización manual abajo.</small></span>`;
+  }
+}
+
+function guardarTasasManuales() {
+  const bcv = parseFloat(document.getElementById("tasaBcv").value) || 0;
+  const p2p = parseFloat(document.getElementById("tasaP2p").value) || 0;
+
+  if (bcv <= 0 && p2p <= 0) {
+    alert("Pon al menos una tasa válida");
+    return;
+  }
+
+  if (bcv > 0) TASAS.bcv = bcv;
+  if (p2p > 0) TASAS.p2p = p2p;
+  TASAS.fechaActualizacion = new Date().toISOString();
+  TASAS.fuente = "manual";
+  guardarTasas();
+
+  cerrarModal();
+  const activeView = document.querySelector(".nav-item.active")?.dataset.view;
+  if (activeView === "cuentas") renderCuentas();
+}
+
+// ============================================================
 // CUENTAS — vista principal con tarjetas y movimientos
 // ============================================================
 
@@ -4158,11 +5167,31 @@ function renderCuentas() {
     <div class="header-row">
       <h1>Cuentas</h1>
       <div style="display:flex;gap:8px">
+        <button class="btn-secondary" onclick="modalTasas()">💱 Tasas de cambio</button>
         <button class="btn-secondary" onclick="modalNuevaCuenta()">+ Nueva cuenta</button>
         <button class="btn-primary" onclick="cambiarVista('pagos');setTimeout(() => modalNuevoPago(), 100)">+ Nuevo pago</button>
       </div>
     </div>
     <p class="muted" style="margin-bottom:20px">Resumen de tus cuentas y efectivo. Las donaciones suman, los honorarios y pagos restan.</p>
+
+    ${(TASAS.bcv > 0 || TASAS.p2p > 0) ? `
+      <div style="background:var(--azul-bg);border-radius:12px;padding:14px 18px;margin-bottom:20px;border-left:4px solid var(--azul);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+        <div style="font-size:13px;color:var(--azul)">
+          <strong style="text-transform:uppercase;letter-spacing:1px;font-size:11px">Tasas activas</strong> ·
+          <strong>BCV: ${TASAS.bcv > 0 ? 'Bs ' + TASAS.bcv.toFixed(2) : '—'}/$</strong> ·
+          P2P: ${TASAS.p2p > 0 ? 'Bs ' + TASAS.p2p.toFixed(2) : '—'}/$
+          ${TASAS.fechaActualizacion ? `<span style="color:var(--gris-500);margin-left:8px">· actualizado ${tiempoRelativo(TASAS.fechaActualizacion)}</span>` : ''}
+        </div>
+        <button class="btn-secondary btn-sm" onclick="modalTasas()">Editar tasas</button>
+      </div>
+    ` : `
+      <div style="background:var(--naranja-bg);border-radius:12px;padding:14px 18px;margin-bottom:20px;border-left:4px solid var(--naranja);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+        <div style="font-size:13px;color:#92400e">
+          <strong>⚠️ No hay tasas configuradas.</strong> Las cuentas en Bolívares no podrán mostrar su equivalencia en USD.
+        </div>
+        <button class="btn-amarillo btn-sm" onclick="modalTasas()">Configurar tasas</button>
+      </div>
+    `}
 
     <div class="kpi-grid" style="margin-bottom:24px">
       <div class="kpi-card">
@@ -4174,7 +5203,10 @@ function renderCuentas() {
         <div class="kpi-card amarillo">
           <div class="kpi-header"><div class="kpi-label">Total en Bolívares</div></div>
           <div class="kpi-value">Bs ${totalBs.toLocaleString("es-VE", {maximumFractionDigits:0})}</div>
-          <div class="kpi-foot">Cuentas en Bs</div>
+          <div class="kpi-foot">
+            ${TASAS.bcv > 0 ? `≈ ${ui.formatMoney(totalBs / TASAS.bcv)} (BCV)` : 'Sin tasa BCV'}
+            ${TASAS.p2p > 0 ? ` · ≈ ${ui.formatMoney(totalBs / TASAS.p2p)} (P2P)` : ''}
+          </div>
         </div>
       ` : ''}
       <div class="kpi-card green">
@@ -4195,6 +5227,33 @@ function renderCuentas() {
         const formatBalance = c.moneda === "Bs"
           ? `Bs ${c.balance.toLocaleString("es-VE", {maximumFractionDigits:0})}`
           : ui.formatMoney(c.balance);
+
+        // Si es Bs, calcular conversiones
+        let conversiones = '';
+        if (c.moneda === "Bs" && c.balance !== 0) {
+          const usdBcv = TASAS.bcv > 0 ? c.balance / TASAS.bcv : null;
+          const usdP2p = TASAS.p2p > 0 ? c.balance / TASAS.p2p : null;
+          if (usdBcv !== null) {
+            conversiones = `
+              <div style="margin-top:6px;padding-top:10px;border-top:1px dashed var(--gris-200)">
+                <div style="font-size:16px;font-weight:700;color:var(--verde)">${ui.formatMoney(usdBcv)}</div>
+                <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">BCV @ ${TASAS.bcv.toFixed(2)}</div>
+                ${usdP2p !== null ? `
+                  <div style="margin-top:4px;font-size:12px;color:var(--gris-500)">
+                    ≈ ${ui.formatMoney(usdP2p)} <span style="opacity:0.7">P2P @ ${TASAS.p2p.toFixed(2)}</span>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          } else {
+            conversiones = `
+              <div style="margin-top:6px;padding-top:10px;border-top:1px dashed var(--gris-200);font-size:12px;color:var(--naranja)">
+                Configura las tasas para ver el equivalente en USD
+              </div>
+            `;
+          }
+        }
+
         return `
           <div style="background:white;border:1px solid var(--gris-200);border-radius:14px;padding:20px;cursor:pointer;border-left:4px solid ${c.color}" onclick="verCuenta(${c.id})">
             <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:12px">
@@ -4206,7 +5265,8 @@ function renderCuentas() {
               <span class="code-tag" style="background:${c.color}22;color:${c.color}">${c.moneda}</span>
             </div>
             <div style="font-size:28px;font-weight:700;color:${c.balance < 0 ? 'var(--rojo)' : 'var(--azul)'};margin-bottom:6px">${formatBalance}</div>
-            <div style="font-size:12px;color:var(--gris-500)">${c.movimientosCount} movimientos · click para ver detalle</div>
+            ${conversiones}
+            <div style="font-size:12px;color:var(--gris-500);margin-top:8px">${c.movimientosCount} movimientos · click para ver detalle</div>
           </div>
         `;
       }).join("")}
@@ -4282,6 +5342,22 @@ function verCuenta(cuentaId) {
         <div class="meta">${c.movimientosCount || movs.length} movimientos · ${c.moneda}</div>
         <div style="margin-top:14px;font-size:36px;font-weight:700">${formatN(balance)}</div>
         <div style="font-size:12px;opacity:0.85;text-transform:uppercase;letter-spacing:1px;font-weight:700">Balance actual</div>
+        ${c.moneda === "Bs" && balance !== 0 ? `
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.3);display:flex;gap:16px;flex-wrap:wrap">
+            ${TASAS.bcv > 0 ? `
+              <div>
+                <div style="font-size:11px;opacity:0.85;text-transform:uppercase;letter-spacing:1px;font-weight:700">BCV @ ${TASAS.bcv.toFixed(2)}</div>
+                <div style="font-size:18px;font-weight:700">${ui.formatMoney(balance / TASAS.bcv)}</div>
+              </div>
+            ` : ''}
+            ${TASAS.p2p > 0 ? `
+              <div style="opacity:0.85">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700">P2P @ ${TASAS.p2p.toFixed(2)}</div>
+                <div style="font-size:14px;font-weight:600">${ui.formatMoney(balance / TASAS.p2p)}</div>
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
       </div>
     </div>
 
@@ -5074,7 +6150,9 @@ function renderReporteDonante() {
   `;
 }
 
-renderDashboard();
+// La app no renderiza nada hasta que el usuario inicie sesión.
+// El login se muestra por defecto (loginScreen visible, appScreen oculto).
+// Al hacer login exitoso, entrar() llama a cambiarVista("dashboard") que renderiza.
 </script>
 </body>
 </html>
