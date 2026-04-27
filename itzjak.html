@@ -5,6 +5,69 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Itzjak — Sistema de Gestión</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+<!-- Firebase SDK (v10.7 - cargado como módulos ESM) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+  import {
+    getAuth,
+    signInWithEmailAndPassword,
+    signOut,
+    onAuthStateChanged,
+    createUserWithEmailAndPassword,
+    sendPasswordResetEmail,
+  } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+  import {
+    getFirestore,
+    doc,
+    getDoc,
+    setDoc,
+    updateDoc,
+    deleteDoc,
+    collection,
+    getDocs,
+    addDoc,
+    query,
+    where,
+    onSnapshot,
+    serverTimestamp,
+  } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+  // === TUS CREDENCIALES DE FIREBASE ===
+  const firebaseConfig = {
+    apiKey: "AIzaSyD33nGC9z99D4sG2Oterwfu5gKgToeIyDg",
+    authDomain: "itzjak-577b0.firebaseapp.com",
+    projectId: "itzjak-577b0",
+    storageBucket: "itzjak-577b0.firebasestorage.app",
+    messagingSenderId: "118162987353",
+    appId: "1:118162987353:web:59ea0abcfbf1a545db1448",
+    measurementId: "G-CN7T8XQ21W"
+  };
+
+  // Inicializar Firebase
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+
+  // Exponer al scope global para que el resto del código pueda usarlos
+  window.fb = {
+    app, auth, db,
+    // Auth methods
+    signInWithEmailAndPassword: (email, pass) => signInWithEmailAndPassword(auth, email, pass),
+    signOut: () => signOut(auth),
+    onAuthStateChanged: (cb) => onAuthStateChanged(auth, cb),
+    createUserWithEmailAndPassword: (email, pass) => createUserWithEmailAndPassword(auth, email, pass),
+    sendPasswordResetEmail: (email) => sendPasswordResetEmail(auth, email),
+    // Firestore methods
+    doc, getDoc, setDoc, updateDoc, deleteDoc,
+    collection, getDocs, addDoc, query, where, onSnapshot,
+    serverTimestamp,
+  };
+
+  // Avisar al resto del código que Firebase está listo
+  window.dispatchEvent(new Event("firebase-ready"));
+  console.log("[Firebase] SDK inicializado correctamente");
+</script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -596,8 +659,8 @@ tr.clickable:hover { background: var(--gris-50); }
     <p class="subtitle">"Sanando mentes, creando sonrisas"</p>
 
     <div class="form-group" style="margin-top:16px">
-      <label>Usuario o Email</label>
-      <input type="text" id="loginUser" placeholder="usuario o email" autocomplete="username" autofocus>
+      <label>Email</label>
+      <input type="email" id="loginUser" placeholder="tu@email.com" autocomplete="username" autofocus>
     </div>
     <div class="form-group">
       <label>Clave</label>
@@ -605,6 +668,9 @@ tr.clickable:hover { background: var(--gris-50); }
     </div>
     <div id="loginError" style="color:var(--rojo);font-size:13px;margin-bottom:12px;min-height:18px"></div>
     <button class="btn-primary btn-full" onclick="intentarLogin()">Entrar</button>
+    <div style="text-align:center;margin-top:12px">
+      <a href="#" onclick="event.preventDefault();olvideClave()" style="font-size:12px;color:var(--gris-500);text-decoration:none">¿Olvidaste tu clave?</a>
+    </div>
   </div>
 </div>
 
@@ -778,7 +844,7 @@ const STORAGE_KEYS = {
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v6.0-tasas";
+const VERSION_ACTUAL = "v7.0-firebase-auth";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -1141,40 +1207,12 @@ const MODULOS_PERMISOS = [
 ];
 
 // Usuarios iniciales: el admin "mish" siempre existe
-const USUARIOS_INICIALES = [
-  {
-    id: 1,
-    usuario: "mish",
-    nombre: "Mish",
-    email: "mish@itzjak.org",
-    clave: "123456",
-    rol: "Administrador",
-    permisos: MODULOS_PERMISOS.map(m => m.id), // todos los permisos
-    activo: true,
-    creado_en: new Date().toISOString(),
-  },
-];
+// En la versión Firebase, los usuarios vienen de Firestore.
+// Se mantiene USUARIOS local solo como caché para compatibilidad con código existente.
+let USUARIOS = cargar(STORAGE_KEYS.usuarios, []);
 
-let USUARIOS = cargar(STORAGE_KEYS.usuarios, null);
-if (!USUARIOS || USUARIOS.length === 0) {
-  USUARIOS = USUARIOS_INICIALES;
-  guardar(STORAGE_KEYS.usuarios, USUARIOS);
-} else {
-  // Asegurar que mish admin siempre existe y tiene todos los permisos
-  let mish = USUARIOS.find(u => u.usuario === "mish");
-  if (!mish) {
-    USUARIOS.push(USUARIOS_INICIALES[0]);
-    guardar(STORAGE_KEYS.usuarios, USUARIOS);
-  } else {
-    // Asegurar que tenga todos los permisos
-    mish.permisos = MODULOS_PERMISOS.map(m => m.id);
-    mish.rol = "Administrador";
-    mish.activo = true;
-    guardar(STORAGE_KEYS.usuarios, USUARIOS);
-  }
-}
-
-// Invitaciones pendientes
+// Invitaciones pendientes (en esta Parte 1 siguen en localStorage,
+// en la Parte 2 se migrarán a Firestore)
 let INVITACIONES = cargar(STORAGE_KEYS.invitaciones, []);
 
 function guardarUsuarios() { guardar(STORAGE_KEYS.usuarios, USUARIOS); }
@@ -1193,34 +1231,132 @@ function tienePermiso(usuario, modulo) {
   return (usuario.permisos || []).includes(modulo);
 }
 
-function intentarLogin() {
+async function olvideClave() {
+  const email = (document.getElementById("loginUser").value || "").trim();
+  if (!email || !email.includes("@")) {
+    alert("Por favor escribe primero tu email arriba, y después click en '¿Olvidaste tu clave?'");
+    return;
+  }
+  if (!confirm(`Te enviaremos un email a ${email} con un link para resetear tu clave. ¿Continuar?`)) return;
+
+  try {
+    if (!window.fb) throw new Error("Firebase no inicializado");
+    await window.fb.sendPasswordResetEmail(email);
+    alert("✓ Te enviamos un email con instrucciones para resetear tu clave. Revisa tu bandeja de entrada (también revisa Spam por si acaso).");
+  } catch (e) {
+    console.error("[Reset password] Error:", e);
+    if (e.code === "auth/user-not-found") {
+      alert("No existe una cuenta con ese email");
+    } else if (e.code === "auth/invalid-email") {
+      alert("Email inválido");
+    } else {
+      alert("Error al enviar email: " + (e.message || "Error desconocido"));
+    }
+  }
+}
+
+async function intentarLogin() {
   const userInput = (document.getElementById("loginUser").value || "").trim().toLowerCase();
   const pass = document.getElementById("loginPass").value || "";
   const err = document.getElementById("loginError");
 
   if (!userInput || !pass) {
-    err.textContent = "Debes ingresar usuario/email y clave";
+    err.textContent = "Debes ingresar email y clave";
     return;
   }
 
-  // Permitir login con usuario o con email
-  const found = USUARIOS.find(u =>
-    (u.usuario.toLowerCase() === userInput || (u.email || "").toLowerCase() === userInput)
-    && u.clave === pass
-    && u.activo !== false
-  );
-
-  if (!found) {
-    err.textContent = "Usuario/email o clave incorrectos";
-    document.getElementById("loginPass").value = "";
+  // Verificar que sea un email (Firebase Auth requiere email)
+  if (!userInput.includes("@")) {
+    err.textContent = "Debes ingresar un email válido (ej: nombre@dominio.com)";
     return;
   }
 
-  USUARIO_ACTUAL = found;
   err.textContent = "";
-  // Guardar sesión
-  guardar(STORAGE_KEYS.sesion_actual, { usuario_id: found.id, ts: Date.now() });
-  entrar();
+  // Mostrar estado de carga
+  const btn = document.querySelector('#loginScreen button[onclick="intentarLogin()"]');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Conectando...";
+  }
+
+  try {
+    if (!window.fb) {
+      throw new Error("Firebase no está inicializado. Verifica tu conexión a internet.");
+    }
+
+    // Login con Firebase Authentication
+    const credenciales = await window.fb.signInWithEmailAndPassword(userInput, pass);
+    const firebaseUser = credenciales.user;
+
+    // Obtener datos del usuario desde Firestore
+    const userDocRef = window.fb.doc(window.fb.db, "usuarios", firebaseUser.uid);
+    const userDoc = await window.fb.getDoc(userDocRef);
+
+    if (!userDoc.exists()) {
+      // Si no hay documento de usuario, no permitir acceso (excepto si fue invitación)
+      await window.fb.signOut();
+      err.textContent = "Tu cuenta no tiene perfil en el sistema. Contacta al administrador.";
+      return;
+    }
+
+    const userData = userDoc.data();
+
+    if (userData.activo === false) {
+      await window.fb.signOut();
+      err.textContent = "Tu cuenta está desactivada. Contacta al administrador.";
+      return;
+    }
+
+    // Guardar el usuario actual
+    USUARIO_ACTUAL = {
+      id: firebaseUser.uid,
+      uid: firebaseUser.uid,
+      usuario: userData.usuario || userData.email,
+      email: userData.email,
+      nombre: userData.nombre,
+      rol: userData.rol || "Empleado",
+      permisos: userData.permisos || [],
+      activo: userData.activo !== false,
+    };
+
+    // También guardar en USUARIOS local (para compatibilidad con código existente)
+    if (!USUARIOS.find(u => u.id === USUARIO_ACTUAL.id)) {
+      USUARIOS.push(USUARIO_ACTUAL);
+      guardarUsuarios();
+    }
+
+    err.textContent = "";
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Entrar";
+    }
+    entrar();
+
+  } catch (e) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Entrar";
+    }
+    console.error("[Login] Error:", e);
+
+    // Traducir errores de Firebase a mensajes amigables
+    let mensaje = "Error al iniciar sesión";
+    if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password" || e.code === "auth/user-not-found") {
+      mensaje = "Email o clave incorrectos";
+    } else if (e.code === "auth/invalid-email") {
+      mensaje = "Email inválido";
+    } else if (e.code === "auth/user-disabled") {
+      mensaje = "Esta cuenta ha sido deshabilitada";
+    } else if (e.code === "auth/too-many-requests") {
+      mensaje = "Demasiados intentos. Espera unos minutos.";
+    } else if (e.code === "auth/network-request-failed") {
+      mensaje = "Sin conexión a internet";
+    } else if (e.message && e.message.includes("Firebase")) {
+      mensaje = e.message;
+    }
+    err.textContent = mensaje;
+    document.getElementById("loginPass").value = "";
+  }
 }
 
 function entrar() {
@@ -1300,7 +1436,14 @@ function aplicarPermisosMenu() {
   });
 }
 
-function salir() {
+async function salir() {
+  try {
+    if (window.fb && window.fb.signOut) {
+      await window.fb.signOut();
+    }
+  } catch (e) {
+    console.error("[Logout] Error:", e);
+  }
   USUARIO_ACTUAL = null;
   document.getElementById("loginUser").value = "";
   document.getElementById("loginPass").value = "";
@@ -1326,7 +1469,60 @@ document.addEventListener("DOMContentLoaded", () => {
   const inviteToken = params.get("invite");
   if (inviteToken) {
     mostrarPantallaInvitacion(inviteToken);
+    return;
   }
+
+  // Conectar con Firebase para detectar sesión persistente
+  function conectarFirebase() {
+    if (!window.fb) {
+      // Firebase aún no está listo, esperar
+      window.addEventListener("firebase-ready", conectarFirebase, { once: true });
+      return;
+    }
+
+    // Mostrar mensaje de "verificando sesión..."
+    const errEl = document.getElementById("loginError");
+    if (errEl) errEl.innerHTML = '<span style="color:var(--gris-500)">Verificando sesión...</span>';
+
+    // Detectar cambios en autenticación
+    window.fb.onAuthStateChanged(async (firebaseUser) => {
+      if (firebaseUser) {
+        // El usuario ya tiene sesión activa en Firebase
+        try {
+          const userDocRef = window.fb.doc(window.fb.db, "usuarios", firebaseUser.uid);
+          const userDoc = await window.fb.getDoc(userDocRef);
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            if (userData.activo !== false) {
+              USUARIO_ACTUAL = {
+                id: firebaseUser.uid,
+                uid: firebaseUser.uid,
+                usuario: userData.usuario || userData.email,
+                email: userData.email,
+                nombre: userData.nombre,
+                rol: userData.rol || "Empleado",
+                permisos: userData.permisos || [],
+                activo: true,
+              };
+              if (!USUARIOS.find(u => u.id === USUARIO_ACTUAL.id)) {
+                USUARIOS.push(USUARIO_ACTUAL);
+                guardarUsuarios();
+              }
+              if (errEl) errEl.textContent = "";
+              entrar();
+              return;
+            }
+          }
+        } catch (e) {
+          console.error("[Auth state] Error:", e);
+        }
+      }
+      // Sin sesión activa: mostrar login normal
+      if (errEl) errEl.textContent = "";
+    });
+  }
+
+  conectarFirebase();
 });
 
 // === Mostrar pantalla de invitación ===
@@ -1513,7 +1709,10 @@ function renderDashboard() {
   // Saludo personalizado según el usuario
   let saludoNombre = "Admin";
   if (USUARIO_ACTUAL) {
-    if (USUARIO_ACTUAL.usuario === "mish") {
+    // Si es Mish (identificada por email o usuario)
+    const esMish = (USUARIO_ACTUAL.email || "").toLowerCase().startsWith("mish@") ||
+                   USUARIO_ACTUAL.usuario === "mish";
+    if (esMish) {
       saludoNombre = "Te Amo MI VIDA";
     } else {
       saludoNombre = USUARIO_ACTUAL.nombre;
