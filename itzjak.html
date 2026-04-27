@@ -844,7 +844,7 @@ const STORAGE_KEYS = {
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v8.0-firebase-usuarios";
+const VERSION_ACTUAL = "v9.0-firebase-pacientes";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -1057,11 +1057,66 @@ function pagosRealizados() {
 }
 
 // Funciones de guardado
-function guardarProfesionales() { guardar(STORAGE_KEYS.profesionales, PROFESIONALES); }
-function guardarPacientes() { guardar(STORAGE_KEYS.pacientes, PACIENTES); }
+// Las funciones de guardar persisten en localStorage (caché) Y disparan
+// sincronización con Firestore en background.
+// Las versiones "async" devuelven una promesa que se puede esperar para confirmar.
+
+function guardarProfesionales() {
+  guardar(STORAGE_KEYS.profesionales, PROFESIONALES);
+}
+function guardarPacientes() {
+  guardar(STORAGE_KEYS.pacientes, PACIENTES);
+}
 function guardarSesiones() { guardar(STORAGE_KEYS.sesiones, SESIONES); }
 function guardarDonaciones() { guardar(STORAGE_KEYS.donaciones, DONACIONES); }
-function guardarFamilias() { guardar(STORAGE_KEYS.familias, FAMILIAS); }
+function guardarFamilias() {
+  guardar(STORAGE_KEYS.familias, FAMILIAS);
+}
+
+// === Helpers para guardar UN documento específico en Firestore ===
+// Estos se usan cuando creamos/editamos un paciente/profesional/familia individual
+
+async function fbGuardarProfesional(prof) {
+  try {
+    await fbGuardarDoc("profesionales", prof);
+  } catch (e) {
+    console.error("[fbGuardarProfesional] Error:", e);
+    alert("Error guardando en Firebase: " + (e.message || "desconocido") + "\n\nLos cambios están guardados localmente pero no se sincronizaron con la nube.");
+  }
+}
+
+async function fbGuardarPaciente(pac) {
+  try {
+    await fbGuardarDoc("pacientes", pac);
+  } catch (e) {
+    console.error("[fbGuardarPaciente] Error:", e);
+    alert("Error guardando en Firebase: " + (e.message || "desconocido"));
+  }
+}
+
+async function fbGuardarFamilia(fam) {
+  try {
+    await fbGuardarDoc("familias", fam);
+  } catch (e) {
+    console.error("[fbGuardarFamilia] Error:", e);
+    alert("Error guardando en Firebase: " + (e.message || "desconocido"));
+  }
+}
+
+async function fbBorrarProfesional(id) {
+  try { await fbBorrarDoc("profesionales", id); }
+  catch (e) { console.error("[fbBorrarProfesional]", e); }
+}
+
+async function fbBorrarPaciente(id) {
+  try { await fbBorrarDoc("pacientes", id); }
+  catch (e) { console.error("[fbBorrarPaciente]", e); }
+}
+
+async function fbBorrarFamilia(id) {
+  try { await fbBorrarDoc("familias", id); }
+  catch (e) { console.error("[fbBorrarFamilia]", e); }
+}
 function guardarCuentas() { guardar(STORAGE_KEYS.cuentas, CUENTAS); }
 function guardarMovimientos() { guardar(STORAGE_KEYS.movimientos, MOVIMIENTOS); }
 function guardarTasas() { guardar(STORAGE_KEYS.tasas, TASAS); }
@@ -1375,6 +1430,95 @@ async function fbSincronizarUsuariosEInvitaciones() {
   }
 }
 
+// ============================================================
+// SERVICIO FIRESTORE GENÉRICO - Para colecciones simples
+// (profesionales, familias, pacientes, etc.)
+// ============================================================
+
+// Convertir Date a string ISO de forma segura (Firestore no acepta Date directo en algunos casos)
+function fbSerializar(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (obj instanceof Date) return obj.toISOString();
+  if (Array.isArray(obj)) return obj.map(fbSerializar);
+  if (typeof obj === 'object') {
+    const out = {};
+    for (const k in obj) {
+      if (obj[k] !== undefined) out[k] = fbSerializar(obj[k]);
+    }
+    return out;
+  }
+  return obj;
+}
+
+// Convertir strings ISO de vuelta a Date donde aplique
+function fbDeserializar(obj, camposFecha = []) {
+  if (!obj) return obj;
+  const out = { ...obj };
+  for (const campo of camposFecha) {
+    if (typeof out[campo] === 'string') {
+      try { out[campo] = new Date(out[campo]); } catch {}
+    }
+  }
+  return out;
+}
+
+// Cargar todos los documentos de una colección
+async function fbCargarColeccion(nombreColeccion, camposFecha = []) {
+  await fbEsperarListo();
+  if (!window.fb) return [];
+  try {
+    const snap = await window.fb.getDocs(window.fb.collection(window.fb.db, nombreColeccion));
+    const lista = [];
+    snap.forEach(docSnap => {
+      const data = docSnap.data();
+      const item = fbDeserializar({ ...data, id: data.id != null ? data.id : docSnap.id }, camposFecha);
+      lista.push(item);
+    });
+    return lista;
+  } catch (e) {
+    console.error(`[fbCargarColeccion ${nombreColeccion}] Error:`, e);
+    return [];
+  }
+}
+
+// Guardar (crear o actualizar) un documento
+async function fbGuardarDoc(nombreColeccion, item) {
+  await fbEsperarListo();
+  if (!window.fb) throw new Error("Firebase no inicializado");
+  if (item.id == null) throw new Error("El item necesita un ID");
+  const ref = window.fb.doc(window.fb.db, nombreColeccion, String(item.id));
+  await window.fb.setDoc(ref, fbSerializar(item), { merge: false });
+}
+
+// Borrar un documento
+async function fbBorrarDoc(nombreColeccion, id) {
+  await fbEsperarListo();
+  if (!window.fb) throw new Error("Firebase no inicializado");
+  const ref = window.fb.doc(window.fb.db, nombreColeccion, String(id));
+  await window.fb.deleteDoc(ref);
+}
+
+// === Sincronizar pacientes, familias y profesionales ===
+async function fbSincronizarDatos() {
+  try {
+    const [profs, fams, pacs] = await Promise.all([
+      fbCargarColeccion("profesionales", ["ultimo_pago", "creado_en"]),
+      fbCargarColeccion("familias", ["creada_en"]),
+      fbCargarColeccion("pacientes", ["creado_en"]),
+    ]);
+    PROFESIONALES = profs;
+    FAMILIAS = fams;
+    PACIENTES = pacs;
+    // Persistir caché local para arranque rápido
+    guardar(STORAGE_KEYS.profesionales, PROFESIONALES);
+    guardar(STORAGE_KEYS.familias, FAMILIAS);
+    guardar(STORAGE_KEYS.pacientes, PACIENTES);
+    console.log(`[fbSincronizarDatos] ${profs.length} profs, ${fams.length} familias, ${pacs.length} pacientes`);
+  } catch (e) {
+    console.error("[fbSincronizarDatos] Error:", e);
+  }
+}
+
 async function olvideClave() {
   const email = (document.getElementById("loginUser").value || "").trim();
   if (!email || !email.includes("@")) {
@@ -1465,6 +1609,8 @@ async function intentarLogin() {
 
     // Sincronizar lista de usuarios e invitaciones desde Firestore
     await fbSincronizarUsuariosEInvitaciones();
+    // Sincronizar pacientes, familias y profesionales desde Firestore
+    await fbSincronizarDatos();
     // Asegurar que el usuario actual está en la caché
     if (!USUARIOS.find(u => u.id === USUARIO_ACTUAL.id)) {
       USUARIOS.push(USUARIO_ACTUAL);
@@ -1652,6 +1798,8 @@ document.addEventListener("DOMContentLoaded", () => {
               };
               // Sincronizar lista de usuarios e invitaciones
               await fbSincronizarUsuariosEInvitaciones();
+              // Sincronizar pacientes, familias y profesionales
+              await fbSincronizarDatos();
               if (!USUARIOS.find(u => u.id === USUARIO_ACTUAL.id)) {
                 USUARIOS.push(USUARIO_ACTUAL);
                 guardarUsuarios();
@@ -2411,17 +2559,19 @@ function cambiarFamiliaPaciente(pacId) {
   `);
 }
 
-function confirmarCambioFamilia(pacId) {
+async function confirmarCambioFamilia(pacId) {
   const p = PACIENTES.find(x => x.id === pacId);
   if (!p) return;
   const nuevaFamId = parseInt(document.getElementById("cf_familia").value) || null;
 
   // Si era responsable de su familia anterior, quitarlo
+  let famAnteriorAfectada = null;
   if (p.familia_id) {
     const famAnterior = FAMILIAS.find(f => f.id === p.familia_id);
     if (famAnterior && famAnterior.responsable_id === pacId) {
       famAnterior.responsable_id = null;
       famAnterior.responsable_nombre = '';
+      famAnteriorAfectada = famAnterior;
       guardarFamilias();
     }
   }
@@ -2435,6 +2585,8 @@ function confirmarCambioFamilia(pacId) {
   }
 
   guardarPacientes();
+  await fbGuardarPaciente(p);
+  if (famAnteriorAfectada) await fbGuardarFamilia(famAnteriorAfectada);
   cerrarModal();
   setTimeout(() => verPaciente(pacId), 50);
 }
@@ -2707,7 +2859,7 @@ function contenidoTabFam(f, tab) {
   return "";
 }
 
-function guardarEdicionFamilia(id) {
+async function guardarEdicionFamilia(id) {
   const f = FAMILIAS.find(x => x.id === id);
   if (!f) return;
   const apellido = document.getElementById("ef_apellido").value.trim();
@@ -2722,23 +2874,28 @@ function guardarEdicionFamilia(id) {
   f.notas = document.getElementById("ef_notas").value.trim();
 
   guardarFamilias();
+  await fbGuardarFamilia(f);
   cerrarModal();
   setTimeout(() => verFamilia(id), 50);
 }
 
-function confirmarBorrarFamilia(id) {
+async function confirmarBorrarFamilia(id) {
   const f = FAMILIAS.find(x => x.id === id);
   if (!f) return;
   const miembros = PACIENTES.filter(p => p.familia_id === id);
   if (miembros.length > 0) {
     if (!confirm(`La familia "${f.apellido}" tiene ${miembros.length} miembros. ¿Eliminar la familia? (Los pacientes NO se borran, solo dejan de pertenecer a esta familia)`)) return;
-    miembros.forEach(p => { p.familia_id = null; });
+    for (const p of miembros) {
+      p.familia_id = null;
+      await fbGuardarPaciente(p);
+    }
     guardarPacientes();
   } else {
     if (!confirm(`¿Eliminar familia "${f.apellido}"?`)) return;
   }
   FAMILIAS = FAMILIAS.filter(x => x.id !== id);
   guardarFamilias();
+  await fbBorrarFamilia(id);
   cerrarModal();
   renderFamilias();
 }
@@ -2792,7 +2949,7 @@ function modalNuevaFamilia() {
   `);
 }
 
-function crearFamilia() {
+async function crearFamilia() {
   const apellido = document.getElementById("nf_apellido").value.trim();
   if (!apellido) { alert("El apellido es obligatorio"); return; }
 
@@ -2805,10 +2962,11 @@ function crearFamilia() {
     notas: document.getElementById("nf_notas").value.trim(),
     responsable_id: null,
     responsable_nombre: '',
-    creada_en: new Date(),
+    creada_en: new Date().toISOString(),
   };
   FAMILIAS.push(nueva);
   guardarFamilias();
+  await fbGuardarFamilia(nueva);
   cerrarModal();
   renderFamilias();
   setTimeout(() => verFamilia(nueva.id), 100);
@@ -2859,7 +3017,7 @@ function modalAgregarMiembro(familiaId) {
   `);
 }
 
-function asignarPacienteAFamilia(familiaId) {
+async function asignarPacienteAFamilia(familiaId) {
   const pacId = parseInt(document.getElementById("am_paciente").value);
   if (!pacId) { alert("Selecciona un paciente"); return; }
   const p = PACIENTES.find(x => x.id === pacId);
@@ -2868,23 +3026,28 @@ function asignarPacienteAFamilia(familiaId) {
   const f = FAMILIAS.find(x => x.id === familiaId);
   if (!p.telefono && f.telefono) p.telefono = f.telefono;
   guardarPacientes();
+  await fbGuardarPaciente(p);
   cerrarModal();
   setTimeout(() => verFamilia(familiaId), 100);
 }
 
-function sacarDeFamilia(pacId, famId) {
+async function sacarDeFamilia(pacId, famId) {
   const p = PACIENTES.find(x => x.id === pacId);
   if (!p) return;
   if (!confirm(`¿Sacar a ${p.nombre_completo} de esta familia? El paciente sigue existiendo, solo deja de pertenecer al grupo familiar.`)) return;
   p.familia_id = null;
   // Si era el responsable, limpiar
   const f = FAMILIAS.find(x => x.id === famId);
+  let famActualizada = false;
   if (f && f.responsable_id === pacId) {
     f.responsable_id = null;
     f.responsable_nombre = '';
+    famActualizada = true;
     guardarFamilias();
   }
   guardarPacientes();
+  await fbGuardarPaciente(p);
+  if (famActualizada) await fbGuardarFamilia(f);
   cerrarModal();
   setTimeout(() => verFamilia(famId), 50);
 }
@@ -2970,7 +3133,7 @@ function modalNuevoPacienteEnFamilia(familiaId) {
   `);
 }
 
-function crearPacienteEnFamilia(familiaId) {
+async function crearPacienteEnFamilia(familiaId) {
   const nombre = document.getElementById("npa_nombre").value.trim();
   if (!nombre) { alert("El nombre es obligatorio"); return; }
 
@@ -2990,10 +3153,11 @@ function crearPacienteEnFamilia(familiaId) {
     estado: "activo",
     tratamientos: [],
     familia_id: familiaId,
-    creado_en: new Date(),
+    creado_en: new Date().toISOString(),
   };
   PACIENTES.unshift(nuevo);
   guardarPacientes();
+  await fbGuardarPaciente(nuevo);
   cerrarModal();
   setTimeout(() => verFamilia(familiaId), 100);
 }
@@ -3391,7 +3555,7 @@ function contenidoTabProf(p, tab) {
   return "";
 }
 
-function guardarEdicionProfesional(id) {
+async function guardarEdicionProfesional(id) {
   const p = PROFESIONALES.find(x => x.id === id);
   if (!p) return;
   const nombre = document.getElementById("ed_nombre").value.trim();
@@ -3412,18 +3576,36 @@ function guardarEdicionProfesional(id) {
   p.notas = document.getElementById("ed_notas").value.trim();
 
   // Actualizar nombre/especialidad en sesiones y tratamientos (denormalizado)
+  const pacientesAfectados = [];
   SESIONES.forEach(s => { if (s.profesional_id === id) s.profesional_nombre = nombre; });
-  PACIENTES.forEach(pa => pa.tratamientos.forEach(t => { if (t.profesional_id === id) { t.profesional_nombre = nombre; t.especialidad = p.especialidad; }}));
+  PACIENTES.forEach(pa => {
+    let cambio = false;
+    pa.tratamientos.forEach(t => {
+      if (t.profesional_id === id) {
+        t.profesional_nombre = nombre;
+        t.especialidad = p.especialidad;
+        cambio = true;
+      }
+    });
+    if (cambio) pacientesAfectados.push(pa);
+  });
 
   guardarProfesionales();
   guardarSesiones();
   guardarPacientes();
 
+  // Sincronizar con Firestore
+  await fbGuardarProfesional(p);
+  // También los pacientes afectados (sus tratamientos cambiaron)
+  for (const pa of pacientesAfectados) {
+    await fbGuardarPaciente(pa);
+  }
+
   cerrarModal();
   setTimeout(() => verProfesional(id), 50);
 }
 
-function confirmarBorrarProfesional(id) {
+async function confirmarBorrarProfesional(id) {
   const p = PROFESIONALES.find(x => x.id === id);
   if (!p) return;
   const tieneSesiones = SESIONES.some(s => s.profesional_id === id);
@@ -3435,6 +3617,7 @@ function confirmarBorrarProfesional(id) {
   if (!confirm(`¿Eliminar a "${p.nombre}"? Esta acción no se puede deshacer.`)) return;
   PROFESIONALES = PROFESIONALES.filter(x => x.id !== id);
   guardarProfesionales();
+  await fbBorrarProfesional(id);
   cerrarModal();
   renderProfesionales();
 }
@@ -3514,7 +3697,7 @@ function modalNuevoProfesional() {
   `);
 }
 
-function crearProfesional() {
+async function crearProfesional() {
   const nombre = document.getElementById("np_nombre").value.trim();
   const honorario = parseFloat(document.getElementById("np_honorario").value);
   if (!nombre) { alert("El nombre es obligatorio"); return; }
@@ -3536,6 +3719,7 @@ function crearProfesional() {
   };
   PROFESIONALES.push(nuevo);
   guardarProfesionales();
+  await fbGuardarProfesional(nuevo);
   cerrarModal();
   renderProfesionales();
   setTimeout(() => verProfesional(nuevo.id), 100);
@@ -3633,7 +3817,7 @@ function modalNuevoPaciente() {
   `);
 }
 
-function crearPaciente() {
+async function crearPaciente() {
   const nombre = document.getElementById("npa_nombre").value.trim();
   if (!nombre) { alert("El nombre es obligatorio"); return; }
 
@@ -3655,7 +3839,7 @@ function crearPaciente() {
     estado: "activo",
     tratamientos: [],
     familia_id: familiaId,
-    creado_en: new Date(),
+    creado_en: new Date().toISOString(),
   };
 
   // Si se asignó familia y el paciente no tiene teléfono, heredar de la familia
@@ -3666,6 +3850,7 @@ function crearPaciente() {
 
   PACIENTES.unshift(nuevo);
   guardarPacientes();
+  await fbGuardarPaciente(nuevo);
   cerrarModal();
   renderPacientes();
   setTimeout(() => verPaciente(nuevo.id), 100);
@@ -3895,7 +4080,7 @@ function calcularCoberturaItzjak() {
   }
 }
 
-function guardarNuevaSesion() {
+async function guardarNuevaSesion() {
   const profId = parseInt(document.getElementById("sesProf").value);
   const pacId = parseInt(document.getElementById("sesPac").value);
   const tratamiento = document.getElementById("sesTrat").value;
@@ -3941,6 +4126,8 @@ function guardarNuevaSesion() {
     trat.monto_itzjak = itzjakCubre;
     guardarPacientes();
   }
+  // Sincronizar paciente actualizado
+  await fbGuardarPaciente(pac);
 
   const nuevaSesion = {
     id: nuevoId(SESIONES),
