@@ -844,7 +844,7 @@ const STORAGE_KEYS = {
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v11.1-firebase-fixes";
+const VERSION_ACTUAL = "v11.2-fix-cierre";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -7360,17 +7360,28 @@ function renderCierre() {
   const inicioMesAnt = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
   const finMesAnt = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
 
+  // Helper: convertir donación a USD (igual que en dashboard y página de donaciones)
+  const tasaConvCierre = TASAS.p2p > 0 ? TASAS.p2p : (TASAS.bcv > 0 ? TASAS.bcv : 0);
+  const donCierreToUSD = (d) => {
+    if (typeof d.monto_usd === 'number' && d.monto_usd > 0) return d.monto_usd;
+    const cuenta = CUENTAS.find(c => c.id === d.cuenta_id);
+    const moneda = cuenta?.moneda || d.moneda_cuenta || "USD";
+    if (moneda === "USD") return d.monto || 0;
+    if (moneda === "Bs" && tasaConvCierre > 0) return (d.monto || 0) / tasaConvCierre;
+    return 0;
+  };
+
   const sesMA = SESIONES.filter(s => s.fecha >= inicioMesAnt && s.fecha <= finMesAnt);
   const pagadoMA = sesMA.filter(s => s.estado_pago_itzjak === "pagado").reduce((s,x) => s + x.monto_itzjak, 0);
   const pendMA = sesMA.filter(s => s.estado_pago_itzjak === "pendiente").reduce((s,x) => s + x.monto_itzjak, 0);
   const cobMA = sesMA.filter(s => s.cobro_paciente_recibido).reduce((s,x) => s + x.monto_paciente, 0);
-  const donMA = DONACIONES.filter(d => d.fecha >= inicioMesAnt && d.fecha <= finMesAnt).reduce((s,d) => s + d.monto, 0);
+  const donMA = DONACIONES.filter(d => d.fecha >= inicioMesAnt && d.fecha <= finMesAnt).reduce((s,d) => s + donCierreToUSD(d), 0);
   const balance = donMA - pagadoMA - pendMA;
 
   const sesMC = SESIONES.filter(s => s.fecha >= inicioMes);
   const pagadoMC = sesMC.filter(s => s.estado_pago_itzjak === "pagado").reduce((s,x) => s + x.monto_itzjak, 0);
   const pendMC = sesMC.filter(s => s.estado_pago_itzjak === "pendiente").reduce((s,x) => s + x.monto_itzjak, 0);
-  const donMC = DONACIONES.filter(d => d.fecha >= inicioMes).reduce((s,d) => s + d.monto, 0);
+  const donMC = DONACIONES.filter(d => d.fecha >= inicioMes).reduce((s,d) => s + donCierreToUSD(d), 0);
 
   document.getElementById("view-cierre").innerHTML = `
     <div class="header-row">
