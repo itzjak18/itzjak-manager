@@ -844,7 +844,7 @@ const STORAGE_KEYS = {
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v9.0-firebase-pacientes";
+const VERSION_ACTUAL = "v10.0-firebase-completo";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -1029,6 +1029,24 @@ if (!CUENTAS || CUENTAS.length === 0) {
   guardar(STORAGE_KEYS.cuentas, CUENTAS);
 }
 
+// Tras login y sincronización con Firestore, si no había cuentas en la nube,
+// se suben las predeterminadas. Eso lo manejamos en fbAsegurarCuentasIniciales.
+async function fbAsegurarCuentasIniciales() {
+  if (!window.fb) return;
+  try {
+    const snap = await window.fb.getDocs(window.fb.collection(window.fb.db, "cuentas"));
+    if (snap.empty) {
+      // No hay cuentas en Firestore → subir las predeterminadas
+      for (const c of CUENTAS_INICIALES) {
+        await fbGuardarCuenta(c);
+      }
+      console.log("[fbAsegurarCuentasIniciales] Cuentas predeterminadas subidas a Firestore");
+    }
+  } catch (e) {
+    console.error("[fbAsegurarCuentasIniciales]", e);
+  }
+}
+
 // === Movimientos (transacciones de cuentas) ===
 let MOVIMIENTOS = cargar(STORAGE_KEYS.movimientos, []);
 
@@ -1117,6 +1135,71 @@ async function fbBorrarFamilia(id) {
   try { await fbBorrarDoc("familias", id); }
   catch (e) { console.error("[fbBorrarFamilia]", e); }
 }
+
+// === Sesiones ===
+async function fbGuardarSesion(s) {
+  try { await fbGuardarDoc("sesiones", s); }
+  catch (e) { console.error("[fbGuardarSesion]", e); }
+}
+async function fbBorrarSesion(id) {
+  try { await fbBorrarDoc("sesiones", id); }
+  catch (e) { console.error("[fbBorrarSesion]", e); }
+}
+
+// === Donaciones ===
+async function fbGuardarDonacion(d) {
+  try { await fbGuardarDoc("donaciones", d); }
+  catch (e) { console.error("[fbGuardarDonacion]", e); }
+}
+async function fbBorrarDonacion(id) {
+  try { await fbBorrarDoc("donaciones", id); }
+  catch (e) { console.error("[fbBorrarDonacion]", e); }
+}
+
+// === Cuentas ===
+async function fbGuardarCuenta(c) {
+  try { await fbGuardarDoc("cuentas", c); }
+  catch (e) { console.error("[fbGuardarCuenta]", e); }
+}
+async function fbBorrarCuenta(id) {
+  try { await fbBorrarDoc("cuentas", id); }
+  catch (e) { console.error("[fbBorrarCuenta]", e); }
+}
+
+// === Movimientos ===
+async function fbGuardarMovimiento(m) {
+  try { await fbGuardarDoc("movimientos", m); }
+  catch (e) { console.error("[fbGuardarMovimiento]", e); }
+}
+async function fbBorrarMovimiento(id) {
+  try { await fbBorrarDoc("movimientos", id); }
+  catch (e) { console.error("[fbBorrarMovimiento]", e); }
+}
+
+// === Tasas (documento singleton) ===
+async function fbCargarTasas() {
+  await fbEsperarListo();
+  if (!window.fb) return null;
+  try {
+    const ref = window.fb.doc(window.fb.db, "tasas", "actual");
+    const snap = await window.fb.getDoc(ref);
+    if (!snap.exists()) return null;
+    return snap.data();
+  } catch (e) {
+    console.error("[fbCargarTasas]", e);
+    return null;
+  }
+}
+async function fbGuardarTasasFirestore(tasasObj) {
+  await fbEsperarListo();
+  if (!window.fb) return;
+  try {
+    const ref = window.fb.doc(window.fb.db, "tasas", "actual");
+    await window.fb.setDoc(ref, fbSerializar(tasasObj));
+  } catch (e) {
+    console.error("[fbGuardarTasasFirestore]", e);
+  }
+}
 function guardarCuentas() { guardar(STORAGE_KEYS.cuentas, CUENTAS); }
 function guardarMovimientos() { guardar(STORAGE_KEYS.movimientos, MOVIMIENTOS); }
 function guardarTasas() { guardar(STORAGE_KEYS.tasas, TASAS); }
@@ -1148,6 +1231,7 @@ async function actualizarTasasAuto() {
     TASAS.fechaActualizacion = new Date().toISOString();
     TASAS.fuente = "automatica";
     guardarTasas();
+    await fbGuardarTasasFirestore(TASAS);
     return { ok: true, bcv: TASAS.bcv, p2p: TASAS.p2p };
   } catch (err) {
     return { ok: false, error: err.message || "Error desconocido" };
@@ -1155,7 +1239,7 @@ async function actualizarTasasAuto() {
 }
 
 // === Helper: registra un movimiento (entrada/salida) en una cuenta ===
-function registrarMovimiento({ cuenta_id, tipo, monto, concepto, categoria, fecha, referencia, ref_tipo, ref_id, notas }) {
+async function registrarMovimiento({ cuenta_id, tipo, monto, concepto, categoria, fecha, referencia, ref_tipo, ref_id, notas }) {
   if (!cuenta_id) {
     // Si no se pasó cuenta_id, intentar deducir por método de pago
     return null;
@@ -1167,15 +1251,16 @@ function registrarMovimiento({ cuenta_id, tipo, monto, concepto, categoria, fech
     monto: parseFloat(monto) || 0,
     concepto: concepto || '',
     categoria: categoria || '',
-    fecha: fecha instanceof Date ? fecha : new Date(fecha),
+    fecha: fecha instanceof Date ? fecha.toISOString() : (typeof fecha === 'string' ? fecha : new Date(fecha).toISOString()),
     referencia: referencia || '',
     ref_tipo: ref_tipo || '', // 'donacion', 'honorario', 'pago_extra', 'ajuste'
     ref_id: ref_id || null,
     notas: notas || '',
-    creado_en: new Date(),
+    creado_en: new Date().toISOString(),
   };
   MOVIMIENTOS.push(mov);
   guardarMovimientos();
+  await fbGuardarMovimiento(mov);
   return mov;
 }
 
@@ -1501,19 +1586,36 @@ async function fbBorrarDoc(nombreColeccion, id) {
 // === Sincronizar pacientes, familias y profesionales ===
 async function fbSincronizarDatos() {
   try {
-    const [profs, fams, pacs] = await Promise.all([
+    const [profs, fams, pacs, sess, dons, cuentas, movs, tasasFb] = await Promise.all([
       fbCargarColeccion("profesionales", ["ultimo_pago", "creado_en"]),
       fbCargarColeccion("familias", ["creada_en"]),
       fbCargarColeccion("pacientes", ["creado_en"]),
+      fbCargarColeccion("sesiones", ["fecha", "fecha_pago"]),
+      fbCargarColeccion("donaciones", ["fecha"]),
+      fbCargarColeccion("cuentas", []),
+      fbCargarColeccion("movimientos", ["fecha", "creado_en"]),
+      fbCargarTasas(),
     ]);
     PROFESIONALES = profs;
     FAMILIAS = fams;
     PACIENTES = pacs;
+    SESIONES = sess;
+    DONACIONES = dons;
+    if (cuentas && cuentas.length > 0) CUENTAS = cuentas;
+    MOVIMIENTOS = movs;
+    if (tasasFb && (tasasFb.bcv > 0 || tasasFb.p2p > 0)) {
+      TASAS = tasasFb;
+    }
     // Persistir caché local para arranque rápido
     guardar(STORAGE_KEYS.profesionales, PROFESIONALES);
     guardar(STORAGE_KEYS.familias, FAMILIAS);
     guardar(STORAGE_KEYS.pacientes, PACIENTES);
-    console.log(`[fbSincronizarDatos] ${profs.length} profs, ${fams.length} familias, ${pacs.length} pacientes`);
+    guardar(STORAGE_KEYS.sesiones, SESIONES);
+    guardar(STORAGE_KEYS.donaciones, DONACIONES);
+    guardar(STORAGE_KEYS.cuentas, CUENTAS);
+    guardar(STORAGE_KEYS.movimientos, MOVIMIENTOS);
+    guardar(STORAGE_KEYS.tasas, TASAS);
+    console.log(`[fbSincronizarDatos] ${profs.length} profs, ${fams.length} familias, ${pacs.length} pacs, ${sess.length} sess, ${dons.length} dons, ${cuentas?.length || 0} cuentas, ${movs.length} movs`);
   } catch (e) {
     console.error("[fbSincronizarDatos] Error:", e);
   }
@@ -1611,6 +1713,14 @@ async function intentarLogin() {
     await fbSincronizarUsuariosEInvitaciones();
     // Sincronizar pacientes, familias y profesionales desde Firestore
     await fbSincronizarDatos();
+    // Asegurar que las cuentas predeterminadas existan en Firestore
+    await fbAsegurarCuentasIniciales();
+    // Re-cargar cuentas tras asegurar predeterminadas
+    const cuentasFinal = await fbCargarColeccion("cuentas", []);
+    if (cuentasFinal && cuentasFinal.length > 0) {
+      CUENTAS = cuentasFinal;
+      guardar(STORAGE_KEYS.cuentas, CUENTAS);
+    }
     // Asegurar que el usuario actual está en la caché
     if (!USUARIOS.find(u => u.id === USUARIO_ACTUAL.id)) {
       USUARIOS.push(USUARIO_ACTUAL);
@@ -1800,6 +1910,13 @@ document.addEventListener("DOMContentLoaded", () => {
               await fbSincronizarUsuariosEInvitaciones();
               // Sincronizar pacientes, familias y profesionales
               await fbSincronizarDatos();
+              // Asegurar cuentas iniciales en Firestore
+              await fbAsegurarCuentasIniciales();
+              const cuentasFinal2 = await fbCargarColeccion("cuentas", []);
+              if (cuentasFinal2 && cuentasFinal2.length > 0) {
+                CUENTAS = cuentasFinal2;
+                guardar(STORAGE_KEYS.cuentas, CUENTAS);
+              }
               if (!USUARIOS.find(u => u.id === USUARIO_ACTUAL.id)) {
                 USUARIOS.push(USUARIO_ACTUAL);
                 guardarUsuarios();
@@ -3209,7 +3326,7 @@ function registrarCobroFamilia(familiaId) {
   `);
 }
 
-function resolverCobroFam(sesionId, accion, familiaId) {
+async function resolverCobroFam(sesionId, accion, familiaId) {
   const s = SESIONES.find(x => x.id === sesionId);
   if (!s) return;
   if (accion === 'pagado') {
@@ -3222,6 +3339,7 @@ function resolverCobroFam(sesionId, accion, familiaId) {
     s.itzjak_cubrio_paciente = true;
   }
   guardarSesiones();
+  await fbGuardarSesion(s);
   cerrarModal();
   // Reabrir si quedan más
   const f = FAMILIAS.find(x => x.id === familiaId);
@@ -3913,7 +4031,7 @@ function registrarCobroPaciente(pacienteId) {
   `);
 }
 
-function resolverCobro(sesionId, accion, pacienteId) {
+async function resolverCobro(sesionId, accion, pacienteId) {
   const s = SESIONES.find(x => x.id === sesionId);
   if (!s) return;
 
@@ -3929,8 +4047,20 @@ function resolverCobro(sesionId, accion, pacienteId) {
   } else if (accion === 'cancelar') {
     if (!confirm(`¿Anular esta sesión del ${ui.formatDate(s.fecha)}? Se eliminará del registro.`)) return;
     SESIONES = SESIONES.filter(x => x.id !== sesionId);
+    guardarSesiones();
+    await fbBorrarSesion(sesionId);
+    cerrarModal();
+    const aunPendientes = SESIONES.filter(x => x.paciente_id === pacienteId && !x.cobro_paciente_recibido && x.monto_paciente > 0);
+    if (aunPendientes.length > 0) {
+      setTimeout(() => registrarCobroPaciente(pacienteId), 100);
+    } else {
+      const activeView = document.querySelector(".nav-item.active")?.dataset.view;
+      if (activeView) cambiarVista(activeView);
+    }
+    return;
   }
   guardarSesiones();
+  await fbGuardarSesion(s);
   cerrarModal();
   // Reabrir si todavía hay sesiones pendientes
   const aunPendientes = SESIONES.filter(x => x.paciente_id === pacienteId && !x.cobro_paciente_recibido && x.monto_paciente > 0);
@@ -4150,6 +4280,7 @@ async function guardarNuevaSesion() {
   };
   SESIONES.push(nuevaSesion);
   guardarSesiones();
+  await fbGuardarSesion(nuevaSesion);
 
   msg.innerHTML = `<span style="color:var(--verde)">✓ Sesión guardada. ${itzjakCubre > 0 ? `Itzjak debe ${ui.formatMoney(itzjakCubre)} a ${prof.nombre}.` : ''}</span>`;
 
@@ -4344,7 +4475,7 @@ function liquidarHonorario(profId) {
   }, 0);
 }
 
-function confirmarLiquidacion(profId) {
+async function confirmarLiquidacion(profId) {
   const prof = PROFESIONALES.find(p => p.id === profId);
   const fecha = document.getElementById("liqFecha").value;
   const metodo = document.getElementById("liqMetodo").value;
@@ -4361,6 +4492,7 @@ function confirmarLiquidacion(profId) {
 
   const fechaPago = new Date(fecha + 'T12:00:00');
   let total = 0;
+  const sesionesAfectadas = [];
 
   SESIONES.forEach(s => {
     if (idsAPagar.includes(s.id)) {
@@ -4370,6 +4502,7 @@ function confirmarLiquidacion(profId) {
       s.referencia_pago = referencia;
       s.notas_pago = notas;
       total += s.monto_itzjak;
+      sesionesAfectadas.push(s);
     }
   });
 
@@ -4379,10 +4512,14 @@ function confirmarLiquidacion(profId) {
   guardarSesiones();
   guardarProfesionales();
 
+  // Sincronizar a Firestore: cada sesión afectada y el profesional
+  for (const s of sesionesAfectadas) await fbGuardarSesion(s);
+  await fbGuardarProfesional(prof);
+
   // Crear movimiento de salida en la cuenta correspondiente
   const cuenta = cuentaPorMetodo(metodo);
   if (cuenta && total > 0) {
-    registrarMovimiento({
+    await registrarMovimiento({
       cuenta_id: cuenta.id,
       tipo: "salida",
       monto: total,
@@ -5801,7 +5938,7 @@ async function ejecutarActualizacionAuto() {
   }
 }
 
-function guardarTasasManuales() {
+async function guardarTasasManuales() {
   const bcv = parseFloat(document.getElementById("tasaBcv").value) || 0;
   const p2p = parseFloat(document.getElementById("tasaP2p").value) || 0;
 
@@ -5815,6 +5952,7 @@ function guardarTasasManuales() {
   TASAS.fechaActualizacion = new Date().toISOString();
   TASAS.fuente = "manual";
   guardarTasas();
+  await fbGuardarTasasFirestore(TASAS);
 
   cerrarModal();
   const activeView = document.querySelector(".nav-item.active")?.dataset.view;
@@ -6162,7 +6300,7 @@ function modalNuevaCuenta() {
   `);
 }
 
-function crearCuenta() {
+async function crearCuenta() {
   const nombre = document.getElementById("nc_nombre").value.trim();
   if (!nombre) { alert("El nombre es obligatorio"); return; }
   const nueva = {
@@ -6177,6 +6315,7 @@ function crearCuenta() {
   };
   CUENTAS.push(nueva);
   guardarCuentas();
+  await fbGuardarCuenta(nueva);
   cerrarModal();
   renderCuentas();
 }
@@ -6233,7 +6372,7 @@ function modalEditarCuenta(id) {
   `);
 }
 
-function guardarEdicionCuenta(id) {
+async function guardarEdicionCuenta(id) {
   const c = CUENTAS.find(x => x.id === id);
   if (!c) return;
   c.nombre = document.getElementById("ec_nombre").value.trim();
@@ -6242,11 +6381,12 @@ function guardarEdicionCuenta(id) {
   c.referencia = document.getElementById("ec_referencia").value.trim();
   c.activa = document.getElementById("ec_activa").checked;
   guardarCuentas();
+  await fbGuardarCuenta(c);
   cerrarModal();
   renderCuentas();
 }
 
-function confirmarBorrarCuenta(id) {
+async function confirmarBorrarCuenta(id) {
   const c = CUENTAS.find(x => x.id === id);
   if (!c) return;
   const tieneMov = MOVIMIENTOS.some(m => m.cuenta_id === id);
@@ -6257,6 +6397,7 @@ function confirmarBorrarCuenta(id) {
   if (!confirm(`¿Eliminar la cuenta "${c.nombre}"?`)) return;
   CUENTAS = CUENTAS.filter(x => x.id !== id);
   guardarCuentas();
+  await fbBorrarCuenta(id);
   cerrarModal();
   renderCuentas();
 }
@@ -6393,7 +6534,7 @@ function modalNuevoPago() {
   setTimeout(() => { const f = document.getElementById("np_fecha"); if (f) f.valueAsDate = new Date(); }, 0);
 }
 
-function guardarNuevoPago() {
+async function guardarNuevoPago() {
   const concepto = document.getElementById("np_concepto").value.trim();
   const fecha = document.getElementById("np_fecha").value;
   const monto = parseFloat(document.getElementById("np_monto").value);
@@ -6404,7 +6545,7 @@ function guardarNuevoPago() {
     return;
   }
 
-  registrarMovimiento({
+  await registrarMovimiento({
     cuenta_id: cuentaId,
     tipo: "salida",
     monto,
@@ -6663,7 +6804,7 @@ function modalNuevaDonacion() {
   setTimeout(() => { const f = document.getElementById("donFecha"); if (f) f.valueAsDate = new Date(); }, 0);
 }
 
-function guardarNuevaDonacion() {
+async function guardarNuevaDonacion() {
   const donante = document.getElementById("don_donante").value.trim();
   const fecha = document.getElementById("donFecha").value;
   const monto = parseFloat(document.getElementById("don_monto").value);
@@ -6679,7 +6820,7 @@ function guardarNuevaDonacion() {
 
   const nuevaDonacion = {
     id: nuevoId(DONACIONES),
-    fecha: new Date(fecha + 'T12:00:00'),
+    fecha: new Date(fecha + 'T12:00:00').toISOString(),
     donante,
     monto,
     metodo,
@@ -6688,11 +6829,12 @@ function guardarNuevaDonacion() {
   };
   DONACIONES.push(nuevaDonacion);
   guardarDonaciones();
+  await fbGuardarDonacion(nuevaDonacion);
 
   // Crear movimiento en la cuenta correspondiente
   const cuenta = cuentaPorMetodo(metodo);
   if (cuenta) {
-    registrarMovimiento({
+    await registrarMovimiento({
       cuenta_id: cuenta.id,
       tipo: "entrada",
       monto,
