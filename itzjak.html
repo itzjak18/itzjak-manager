@@ -844,7 +844,7 @@ const STORAGE_KEYS = {
 };
 
 // Si la versión guardada es distinta, limpiar todo (para arrancar limpio)
-const VERSION_ACTUAL = "v11.0-firebase-import";
+const VERSION_ACTUAL = "v11.1-firebase-fixes";
 // Solo registramos la versión, NO borramos datos del usuario
 if (localStorage.getItem(STORAGE_KEYS.version) !== VERSION_ACTUAL) {
   localStorage.setItem(STORAGE_KEYS.version, VERSION_ACTUAL);
@@ -2206,7 +2206,20 @@ function renderDashboard() {
   const referidosEsc = PACIENTES.filter(p => p.referido_colegio).length;
   const pendientesPagar = SESIONES.filter(s => s.estado_pago_itzjak === "pendiente").reduce((sum, s) => sum + s.monto_itzjak, 0);
   const cobrosPendientes = SESIONES.filter(s => !s.cobro_paciente_recibido && s.monto_paciente > 0).reduce((sum, s) => sum + s.monto_paciente, 0);
-  const donacionesMes = DONACIONES.filter(d => d.fecha >= inicioMes).reduce((sum, d) => sum + d.monto, 0);
+
+  // Convertir donaciones a USD (las que están en Bs usan tasa P2P, fallback BCV)
+  const tasaConvD = TASAS.p2p > 0 ? TASAS.p2p : (TASAS.bcv > 0 ? TASAS.bcv : 0);
+  const donToUSD = (d) => {
+    // Si tiene monto_usd guardado al momento de la donación, usarlo (más preciso)
+    if (typeof d.monto_usd === 'number' && d.monto_usd > 0) return d.monto_usd;
+    // Fallback: deducir por la cuenta destino
+    const cuenta = CUENTAS.find(c => c.id === d.cuenta_id);
+    const moneda = cuenta?.moneda || d.moneda_cuenta || "USD";
+    if (moneda === "USD") return d.monto || 0;
+    if (moneda === "Bs" && tasaConvD > 0) return (d.monto || 0) / tasaConvD;
+    return 0;
+  };
+  const donacionesMes = DONACIONES.filter(d => d.fecha >= inicioMes).reduce((sum, d) => sum + donToUSD(d), 0);
 
   // Próximos pagos pendientes (top 4)
   const pendientesPorProf = {};
@@ -6206,8 +6219,8 @@ function renderCuentas() {
           <div class="kpi-header"><div class="kpi-label">Total en Bolívares</div></div>
           <div class="kpi-value">Bs ${totalBs.toLocaleString("es-VE", {maximumFractionDigits:0})}</div>
           <div class="kpi-foot">
-            ${TASAS.bcv > 0 ? `≈ ${ui.formatMoney(totalBs / TASAS.bcv)} (BCV)` : 'Sin tasa BCV'}
-            ${TASAS.p2p > 0 ? ` · ≈ ${ui.formatMoney(totalBs / TASAS.p2p)} (P2P)` : ''}
+            ${TASAS.p2p > 0 ? `≈ ${ui.formatMoney(totalBs / TASAS.p2p)} (P2P)` : 'Sin tasa P2P'}
+            ${TASAS.bcv > 0 ? ` · ≈ ${ui.formatMoney(totalBs / TASAS.bcv)} (BCV)` : ''}
           </div>
         </div>
       ` : ''}
@@ -6230,19 +6243,23 @@ function renderCuentas() {
           ? `Bs ${c.balance.toLocaleString("es-VE", {maximumFractionDigits:0})}`
           : ui.formatMoney(c.balance);
 
-        // Si es Bs, calcular conversiones
+        // Si es Bs, calcular conversiones (P2P arriba grande, BCV abajo pequeño)
         let conversiones = '';
         if (c.moneda === "Bs" && c.balance !== 0) {
           const usdBcv = TASAS.bcv > 0 ? c.balance / TASAS.bcv : null;
           const usdP2p = TASAS.p2p > 0 ? c.balance / TASAS.p2p : null;
-          if (usdBcv !== null) {
+          // Mostrar P2P grande si está; si solo hay BCV, mostrar BCV grande
+          const principal = usdP2p !== null ? { val: usdP2p, label: 'P2P', tasa: TASAS.p2p } : (usdBcv !== null ? { val: usdBcv, label: 'BCV', tasa: TASAS.bcv } : null);
+          const secundaria = (usdP2p !== null && usdBcv !== null) ? { val: usdBcv, label: 'BCV', tasa: TASAS.bcv } : null;
+
+          if (principal) {
             conversiones = `
               <div style="margin-top:6px;padding-top:10px;border-top:1px dashed var(--gris-200)">
-                <div style="font-size:16px;font-weight:700;color:var(--verde)">${ui.formatMoney(usdBcv)}</div>
-                <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">BCV @ ${TASAS.bcv.toFixed(2)}</div>
-                ${usdP2p !== null ? `
+                <div style="font-size:16px;font-weight:700;color:var(--verde)">${ui.formatMoney(principal.val)}</div>
+                <div style="font-size:11px;color:var(--gris-500);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">${principal.label} @ ${principal.tasa.toFixed(2)}</div>
+                ${secundaria ? `
                   <div style="margin-top:4px;font-size:12px;color:var(--gris-500)">
-                    ≈ ${ui.formatMoney(usdP2p)} <span style="opacity:0.7">P2P @ ${TASAS.p2p.toFixed(2)}</span>
+                    ≈ ${ui.formatMoney(secundaria.val)} <span style="opacity:0.7">${secundaria.label} @ ${secundaria.tasa.toFixed(2)}</span>
                   </div>
                 ` : ''}
               </div>
@@ -6346,16 +6363,16 @@ function verCuenta(cuentaId) {
         <div style="font-size:12px;opacity:0.85;text-transform:uppercase;letter-spacing:1px;font-weight:700">Balance actual</div>
         ${c.moneda === "Bs" && balance !== 0 ? `
           <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.3);display:flex;gap:16px;flex-wrap:wrap">
-            ${TASAS.bcv > 0 ? `
+            ${TASAS.p2p > 0 ? `
               <div>
-                <div style="font-size:11px;opacity:0.85;text-transform:uppercase;letter-spacing:1px;font-weight:700">BCV @ ${TASAS.bcv.toFixed(2)}</div>
-                <div style="font-size:18px;font-weight:700">${ui.formatMoney(balance / TASAS.bcv)}</div>
+                <div style="font-size:11px;opacity:0.85;text-transform:uppercase;letter-spacing:1px;font-weight:700">P2P @ ${TASAS.p2p.toFixed(2)}</div>
+                <div style="font-size:18px;font-weight:700">${ui.formatMoney(balance / TASAS.p2p)}</div>
               </div>
             ` : ''}
-            ${TASAS.p2p > 0 ? `
+            ${TASAS.bcv > 0 ? `
               <div style="opacity:0.85">
-                <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700">P2P @ ${TASAS.p2p.toFixed(2)}</div>
-                <div style="font-size:14px;font-weight:600">${ui.formatMoney(balance / TASAS.p2p)}</div>
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700">BCV @ ${TASAS.bcv.toFixed(2)}</div>
+                <div style="font-size:14px;font-weight:600">${ui.formatMoney(balance / TASAS.bcv)}</div>
               </div>
             ` : ''}
           </div>
@@ -6987,10 +7004,20 @@ function renderCobros() {
 // ============================================================
 
 function renderDonaciones() {
-  const total = DONACIONES.reduce((s, d) => s + d.monto, 0);
+  // Convertir Bs a USD usando tasa P2P (fallback BCV)
+  const tasaConv = TASAS.p2p > 0 ? TASAS.p2p : (TASAS.bcv > 0 ? TASAS.bcv : 0);
+  const donToUSDLocal = (d) => {
+    if (typeof d.monto_usd === 'number' && d.monto_usd > 0) return d.monto_usd;
+    const cuenta = CUENTAS.find(c => c.id === d.cuenta_id);
+    const moneda = cuenta?.moneda || d.moneda_cuenta || "USD";
+    if (moneda === "USD") return d.monto || 0;
+    if (moneda === "Bs" && tasaConv > 0) return (d.monto || 0) / tasaConv;
+    return 0;
+  };
+  const total = DONACIONES.reduce((s, d) => s + donToUSDLocal(d), 0);
   const hoy = new Date();
   const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-  const totalMes = DONACIONES.filter(d => d.fecha >= inicioMes).reduce((s, d) => s + d.monto, 0);
+  const totalMes = DONACIONES.filter(d => d.fecha >= inicioMes).reduce((s, d) => s + donToUSDLocal(d), 0);
 
   document.getElementById("view-donaciones").innerHTML = `
     <div class="header-row">
